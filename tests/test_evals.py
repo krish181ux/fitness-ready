@@ -12,7 +12,7 @@ from evals.ground_truth import TRUTH, compute, read_dataset
 
 TOOL_NAMES = {
     "get_daily_metrics", "get_sleep", "get_hrv_trend", "list_activities",
-    "get_readiness_inputs", "none",
+    "get_readiness_inputs", "none", "log_note", "get_journal",
 }
 
 
@@ -157,3 +157,58 @@ def test_verdict_match_ignores_words_that_contain_a_colour():
 def test_verdict_match_is_none_without_an_expected_colour():
     assert metrics.verdict_match("", "Green.") is None
     assert metrics.verdict_match("8.4", "Green.") is None
+
+
+# --- bucket J: the journal ---------------------------------------------------
+from evals.ground_truth import JOURNAL_DATASET_PATH  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def journal_dataset():
+    return read_dataset(JOURNAL_DATASET_PATH)
+
+
+def test_journal_read_answers_are_computed_and_current(conn, journal_dataset):
+    computed = compute(conn, journal_dataset)
+    for row in journal_dataset:
+        if row["expected_tool"] == "get_journal":
+            assert row["expected_answer"] == str(computed[row["id"]]), row["id"]
+
+
+def test_journal_writes_never_land_where_a_read_case_looks(journal_dataset):
+    """Eval writes persist in the fixture journal, so reads must not overlap them."""
+    written = {(m["kind"], m["date"]) for m in (
+        metrics._LOG_EXPECTATION.match(r["expected_answer"]) for r in journal_dataset) if m}
+    assert ("alcohol", "2026-09-12") in written
+    assert all(not ("2026-09-01" <= day <= "2026-09-09") for _kind, day in written)
+
+
+def _write(kind, day, value=None, status="logged"):
+    import json
+    return {"tool": "log_note", "arguments": {"kind": kind, "date": day, "value": value},
+            "result": json.dumps({"status": status})}
+
+
+def test_logged_requires_exactly_the_expected_entry():
+    assert metrics.logged("rpe=8 on 2026-09-13", [_write("rpe", "2026-09-13", "8")]) == 1
+    assert metrics.logged("rpe=8 on 2026-09-13", [_write("rpe", "2026-09-13", 8.0)]) == 1
+    assert metrics.logged("rpe=8 on 2026-09-13", [_write("rpe", "2026-09-13", "7")]) == 0
+    assert metrics.logged("alcohol=3 on 2026-09-12", [_write("alcohol", "2026-09-13", "3")]) == 0
+    two = [_write("rpe", "2026-09-13", "8"), _write("energy", "2026-09-13", "6")]
+    assert metrics.logged("rpe=8 on 2026-09-13", two) == 0
+    assert metrics.logged("illness on 2026-09-13", [_write("illness", "2026-09-13", "")]) == 1
+
+
+def test_logged_scores_what_the_server_stored_not_what_the_answer_claims():
+    import json
+    refused = {"tool": "log_note", "arguments": {"kind": "rpe", "date": "2026-09-13", "value": "8"},
+               "result": json.dumps({"detail": "Unknown kind"})}
+    assert metrics.logged("rpe=8 on 2026-09-13", [refused], "Logged your effort!") == 0
+    retried = [_write("rpe", "2026-09-13", "8", status="already_logged")]
+    assert metrics.logged("rpe=8 on 2026-09-13", retried) == 1
+
+
+def test_ask_means_a_question_and_no_write():
+    assert metrics.logged("ask", [], "How hard, on a 1-10 scale?") == 1
+    assert metrics.logged("ask", [_write("rpe", "2026-09-13", "7")], "Logged 7. ?") == 0
+    assert metrics.logged("ask", [], "Noted.") == 0

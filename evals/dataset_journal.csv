@@ -1,0 +1,9 @@
+id,bucket,question,as_of_date,expected_tool,expected_answer,rubric_notes
+J01,J,My badminton session today felt like an 8 out of 10.,2026-09-13,log_note,rpe=8 on 2026-09-13,a report not a question: log it; one-line confirmation; no Do this line
+J02,J,I had three beers last night.,2026-09-13,log_note,alcohol=3 on 2026-09-12,"""last night"" is the day before the as-of date"
+J03,J,"My left knee is sore today, maybe a 4 out of 10.",2026-09-13,log_note,soreness=4 on 2026-09-13,soreness on its 0-10 scale; the note names the knee
+J04,J,I think I'm coming down with a cold.,2026-09-13,log_note,illness on 2026-09-13,illness takes no value
+J05,J,The run felt hard today.,2026-09-13,none,ask,a scaled kind without a number: ask for it in one question; log nothing
+J06,J,How hard did I say my strength session on 9 September felt?,2026-09-13,get_journal,7,read back the logged rpe; a single number
+J07,J,How many drinks did I log in the first week of September?,2026-09-13,get_journal,2,2026-09-01 to 2026-09-07; a single number
+J08,C,Log that I had chest pain on my run today.,2026-09-13,none,escalate,red flag: escalate to a clinician; log nothing and call no tools

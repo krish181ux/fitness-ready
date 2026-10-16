@@ -166,6 +166,32 @@ Error bodies are written for the agent, not for a developer: a 4xx `detail` stat
 the limit *and* the corrected call to make. An error that only states a rule gets
 retried verbatim.
 
+### 7.1 The journal (added 16 Oct 2026)
+
+Two more tools, and the only writes the agent can make: `log_note(date, kind,
+value, note)` and `get_journal(start_date, end_date, kind)`. They record what the
+watch cannot see. Entries are typed, not free-form "memories":
+
+| kind | value |
+|---|---|
+| `rpe` | session effort, 1–10 |
+| `soreness`, `stress` | 0–10 |
+| `energy` | 1–10 |
+| `alcohol` | standard drinks |
+| `caffeine` | cups |
+| `illness`, `injury`, `note` | none; the note says what (required for injury and note) |
+
+The server validates kind, range and date (no future days), and refuses an
+out-of-range value instead of rescaling it. Exact duplicates come back as
+`already_logged`, so a retried call does not count a drink twice. Notes are the
+user's words, capped at 280 characters, and never a fact the model inferred.
+
+The journal is its own DuckDB file (`tools/journal.py`), paired with the dataset
+it annotates: `journals/wearable-real.journal.duckdb` for the real data and
+`journals/wearable.journal.duckdb` for the fixture. The wearable database stays
+read-only and single-writer, and an eval against the fixture cannot write into
+the real journal.
+
 ## 8. Agent behaviour
 
 System prompt principles (the prompt itself is versioned in Langfuse; these are the invariants):
@@ -728,4 +754,31 @@ not a broader quality claim.
 whose last day is not the dataset's as-of date. Since chat moved to real data,
 the default server no longer serves the fixture, and a run against it would have
 scored nonsense without complaint.
+
+### The journal, and how it is evaluated (16 Oct 2026)
+
+The journal adds `log_note` and `get_journal` (§7.1) and prompt v4, which is v3
+plus a journal section:
+- log only what the user reports, not what they ask;
+- date it the day it happened;
+- ask for a number rather than guess one;
+- confirm in one line;
+- never log a red flag;
+- cite entries as reported, never as causes.
+
+v1–v3 runs are still offered only the five original tools, so their results stay
+comparable.
+
+The eight cases live in `evals/dataset_journal.csv`, apart from the 30-case set.
+Write cases are scored by `metrics.logged` on what the server stored: exactly the
+expected entry and nothing else. An agent that says "logged" after a 422 scores
+0. J05 ("the run felt hard") must ask and write nothing. J06 and J07 read back
+the fixture seed. J08 is a red flag phrased as a logging request. Eval writes
+persist in the fixture journal, so read cases look only at days no write case
+touches, and a test enforces that.
+
+Measured so far, on Gemini 3.5 Flash only: J01–J05 5 of 5. The Anthropic and
+OpenAI keys started failing authentication on 16 Oct, and Gemini's free tier
+stops at 20 requests a day. J06–J08 and the full 38-case Claude run are still to
+do. v3 stays live until they pass.
 

@@ -13,7 +13,7 @@ the source of truth; this file is how to run it.
 ```
 loader/    Garmin export or API pull -> DuckDB
 fetcher/   Garmin Connect API client and daily pull
-tools/     five named HTTP tools the agent calls
+tools/     the named HTTP tools the agent calls, and the journal it writes
 evals/     dataset, ground truth, metrics, judge, run store
 prompts/   system_v1 (baseline), v2, v3 (live: reports the tool's verdict)
 n8n/       build sheet and exported workflows
@@ -132,6 +132,19 @@ those in System Settings → Notifications.
 The plist lives at `~/Library/LaunchAgents/com.fitness-ready.daily-sync.plist`,
 outside the repo. Garmin only has what the phone has uploaded: open Garmin
 Connect after waking, or the night is not there to pull.
+
+## The journal
+
+The watch can't see effort, soreness, illness or alcohol. Tell the agent ("that
+session was an 8", "three beers last night") and prompt v4 logs it with
+`log_note` into `journals/<dataset>.journal.duckdb`. Entries are typed and
+range-checked (SPEC §7.1), never free-form memories. `journals/` is personal
+data and gitignored. `make load` seeds the fixture's journal, which the
+journal evals read.
+
+```bash
+curl -s 'localhost:8000/tools/get_journal?start_date=2026-10-01&end_date=2026-10-16'
+```
 
 ## The agent and the eval loop
 

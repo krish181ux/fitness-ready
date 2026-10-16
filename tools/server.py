@@ -1,4 +1,4 @@
-"""The agent's only access to the data: five named tools over HTTP (SPEC §7).
+"""The agent's only access to the data: named tools over HTTP (SPEC §7).
 
     uvicorn tools.server:app --port 8000
 
@@ -17,9 +17,10 @@ from typing import Any
 
 import duckdb
 from fastapi import Depends, FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from db import connect, db_path
-from tools import queries
+from tools import journal, queries
 from tools.derived import MAX_RANGE_DAYS
 
 # Retries for a request that lands while the loader is checkpointing the file.
@@ -147,6 +148,66 @@ def get_readiness_inputs(
     conn: duckdb.DuckDBPyConnection = Depends(get_conn),
 ) -> dict[str, Any]:
     return queries.get_readiness_inputs(conn, as_of=date_)
+
+
+# ------------------------------------------------------------------ journal
+# The only writes the agent can make. The wearable database stays read-only.
+
+def get_journal_conn() -> Iterator[duckdb.DuckDBPyConnection]:
+    try:
+        conn = journal.connect()
+    except duckdb.Error:
+        raise HTTPException(
+            status_code=503,
+            detail="The journal could not be opened. This is a server problem: do not retry, "
+                   "and tell the user the entry was not saved.",
+        )
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+class JournalEntry(BaseModel):
+    # Aliased: a field called `date` would shadow the type it is annotated with.
+    day: date = Field(alias="date", description="The day the entry is about, YYYY-MM-DD")
+    kind: str = Field(description=" | ".join(journal.KINDS))
+    # n8n's $fromAI sends "" for an omitted optional value.
+    value: float | str | None = None
+    note: str | None = None
+
+
+@app.post("/tools/log_note", summary="Record something the watch can't see, in the journal")
+def log_note(
+    entry: JournalEntry,
+    conn: duckdb.DuckDBPyConnection = Depends(get_journal_conn),
+) -> dict[str, Any]:
+    value = entry.value
+    if isinstance(value, str):
+        try:
+            value = float(value) if value.strip() else None
+        except ValueError:
+            raise HTTPException(status_code=422, detail=(
+                f"value {value!r} is not a number. Send the number alone, e.g. value=7, "
+                "and put any words in note."))
+    try:
+        return journal.log_note(conn, entry.day, entry.kind, value, entry.note)
+    except journal.JournalError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+
+@app.get("/tools/get_journal", summary="Journal entries in a date range, optionally one kind")
+def get_journal(
+    start_date: date,
+    end_date: date,
+    kind: str | None = Query(default=None, description=" | ".join(journal.KINDS)),
+    conn: duckdb.DuckDBPyConnection = Depends(get_journal_conn),
+) -> dict[str, Any]:
+    _validate_range(start_date, end_date)
+    try:
+        return journal.get_journal(conn, start_date, end_date, kind=kind or None)
+    except journal.JournalError as error:
+        raise HTTPException(status_code=422, detail=str(error))
 
 
 def main() -> None:  # pragma: no cover - convenience entrypoint

@@ -30,6 +30,8 @@ from tools.derived import (
 )
 
 DATASET_PATH = Path(__file__).resolve().parent / "dataset.csv"
+# Journal cases live apart so the 30-case set v1-v3 were measured on is unchanged.
+JOURNAL_DATASET_PATH = Path(__file__).resolve().parent / "dataset_journal.csv"
 COLUMNS = ("id", "bucket", "question", "as_of_date", "expected_tool", "expected_answer", "rubric_notes")
 
 TruthFn = Callable[[duckdb.DuckDBPyConnection, date], Any]
@@ -170,6 +172,31 @@ def _todays_verdict(conn, as_of):
 
 for _case in ("B03", "B07", "B09"):
     truth(_case)(_todays_verdict)
+
+
+# ------------------------------------------------- bucket J: journal read-backs
+# Answered from the fixture journal's seed (tools/journal.FIXTURE_ENTRIES)
+# through the same query the tool runs, on a throwaway copy.
+
+def _journal_rows(as_of: date, start: date, kind: str) -> list[dict[str, Any]]:
+    from tools import journal
+
+    with journal.connect(":memory:") as jconn:
+        journal.seed_fixture(jconn)
+        return journal.get_journal(jconn, start, as_of, kind=kind)["rows"]
+
+
+@truth("J06")
+def strength_rpe_on_9_sep(conn, as_of):
+    return _journal_rows(as_of, date(2026, 9, 9), "rpe")[0]["value"]
+
+
+@truth("J07")
+def drinks_logged_first_week_of_september(conn, as_of):
+    # Not "this month": J02 writes drinks on 12 Sep into the same fixture
+    # journal, and a read case must not depend on what earlier runs wrote.
+    rows = _journal_rows(date(2026, 9, 7), date(2026, 9, 1), "alcohol")
+    return sum(r["value"] for r in rows)
 
 
 # ----------------------------------------------------------------- dataset io

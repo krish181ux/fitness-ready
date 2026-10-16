@@ -4,6 +4,8 @@ raw/
 !raw/.gitkeep
 *.duckdb
 *.duckdb.wal
+# What the agent logs from chat (tools/journal.py). Personal, like raw/.
+journals/
 
 .env
 # Garmin OAuth tokens, if anyone points $GARMIN_TOKENS inside the repo.

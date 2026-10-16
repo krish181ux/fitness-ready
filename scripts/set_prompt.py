@@ -6,6 +6,7 @@
     python3 scripts/set_prompt.py v1          # the naive baseline
     python3 scripts/set_prompt.py v2          # rubric in the prompt
     python3 scripts/set_prompt.py v3          # verdict computed by the tool
+    python3 scripts/set_prompt.py v4          # v3 plus the journal
 
 `--install` moves every prompt body into the **Edit Fields** node as
 `prompt_v1`, `prompt_v2`, ..., adds a `prompt_version` field, and points the AI
@@ -43,12 +44,14 @@ WORKFLOW = "workflow_agent"
 CONTAINER_PATH = "/tmp/agent_prompt_switch.json"
 SET_NODE = "Edit Fields"
 FALLBACK_DATE = "$now.format('yyyy-MM-dd')"
-VERSIONS = ("v1", "v2", "v3")
+VERSIONS = ("v1", "v2", "v3", "v4")
 SELECTOR = "={{ $json['prompt_' + $json.prompt_version] }}"
 # The two-way selector from before v3; still recognised, replaced on any write.
 OLD_SELECTOR = "={{ $json.prompt_version === 'v1' ? $json.prompt_v1 : $json.prompt_v2 }}"
-# Checked in order: v3 keeps v2's rules, so its own marker must be tried first.
+# Checked in order: each version keeps the rules before it, so the newest
+# marker must be tried first.
 MARKERS = {
+    "v4": "a question is not a report",
     "v3": "Report it; do not recompute it",
     "v1": "Be helpful and encouraging",
     "v2": "One action, one sentence",

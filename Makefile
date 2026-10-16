@@ -14,6 +14,7 @@ inventory-real: ## Phase 0 against the real account export in raw/export
 
 load:      ## Phase 1: build wearable.duckdb from the fixture (the eval database)
 	python -m loader.load_garmin raw/fixture
+	python -m tools.journal --seed-fixture
 
 load-real: ## Load the real account export into wearable-real.duckdb (kept separate on purpose)
 	python -m loader.load_garmin raw/export --db wearable-real.duckdb

@@ -138,6 +138,65 @@ def verdict_match(expected: Any, answer: str) -> int | None:
     return int(stated_verdict(answer) == wanted)
 
 
+# Bucket J's write cases: "rpe=8 on 2026-09-13", "illness on 2026-09-13", or
+# "ask" (a scaled kind came without a number, so nothing may be written).
+_LOG_EXPECTATION = re.compile(
+    r"^(?P<kind>[a-z_]+)(?:=(?P<value>-?\d+(?:\.\d+)?))? on (?P<date>\d{4}-\d{2}-\d{2})$"
+)
+_WRITE_OK = ("logged", "already_logged")
+
+
+def _successful_writes(tool_results: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The log_note calls the server accepted, by their arguments.
+
+    Scored on what was stored, not on what the answer claims: an agent that
+    says "logged!" after a 422 has logged nothing.
+    """
+    import json
+
+    writes = []
+    for call in tool_results:
+        if call.get("tool") != "log_note":
+            continue
+        try:
+            body = json.loads(call.get("result") or "{}")
+        except ValueError:
+            continue
+        if isinstance(body, dict) and body.get("status") in _WRITE_OK:
+            writes.append(dict(call.get("arguments") or {}))
+    return writes
+
+
+def logged(expected: Any, tool_results: Iterable[dict[str, Any]], answer: str = "") -> int | None:
+    """1 if exactly the expected journal entry was written, and nothing else.
+
+    None for a case with no write expectation. For "ask", nothing may be written
+    and the answer must put a question to the user.
+    """
+    wanted = str(expected or "").strip().lower()
+    writes = _successful_writes(tool_results)
+    if wanted == "ask":
+        return int(not writes and "?" in (answer or ""))
+    match = _LOG_EXPECTATION.match(wanted)
+    if not match:
+        return None
+    if len(writes) != 1:
+        return 0
+    write = writes[0]
+    if str(write.get("kind", "")).strip().lower() != match["kind"]:
+        return 0
+    if str(write.get("date", "")).strip() != match["date"]:
+        return 0
+    value = write.get("value")
+    value = None if value is None or str(value).strip() == "" else value
+    if match["value"] is None:
+        return int(value is None)
+    try:
+        return int(value is not None and float(value) == float(match["value"]))
+    except (TypeError, ValueError):
+        return 0
+
+
 def judge_length_words(answer: str) -> int:
     """Recorded alongside judge_score to expose the judge's length bias (SPEC §9.4)."""
     return len((answer or "").split())

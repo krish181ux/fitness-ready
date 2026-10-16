@@ -36,6 +36,14 @@ def conn(db_file: Path):
         connection.close()
 
 
+@pytest.fixture(autouse=True)
+def journal_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Every test gets its own journal; nothing ever writes into journals/."""
+    path = tmp_path / "test.journal.duckdb"
+    monkeypatch.setenv("JOURNAL_DB", str(path))
+    return path
+
+
 @pytest.fixture()
 def client(db_file: Path, monkeypatch: pytest.MonkeyPatch):
     from fastapi.testclient import TestClient

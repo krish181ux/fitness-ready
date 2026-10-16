@@ -12,6 +12,15 @@ services:
       # WEARABLE_DB_FILE=./wearable-real.duckdb in .env, then
       # `docker compose up -d tools`. Switch back before any eval run.
       - ${WEARABLE_DB_FILE:-./wearable.duckdb}:/data/wearable.duckdb:ro
+      # The journal is the one thing the agent writes (tools/journal.py), so it
+      # gets its own writable directory. A directory, not a file: DuckDB writes
+      # a .wal beside the database.
+      - ./journals:/journals
+    environment:
+      # Picks the journal paired with the mounted dataset, so the fixture and
+      # the real data never share one.
+      - WEARABLE_DB_FILE=${WEARABLE_DB_FILE:-./wearable.duckdb}
+      - JOURNAL_DIR=/journals
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s

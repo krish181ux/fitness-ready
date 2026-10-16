@@ -135,8 +135,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
 ]
 
 
-def openai_tools() -> list[dict[str, Any]]:
-    """TOOL_SPECS as OpenAI-style function tools."""
+def openai_tools(version: str = "v1") -> list[dict[str, Any]]:
+    """The tools this prompt version is offered, as OpenAI-style function tools."""
+    specs = TOOL_SPECS + (JOURNAL_TOOL_SPECS if version in JOURNAL_PROMPTS else [])
     return [
         {
             "type": "function",
@@ -150,7 +151,7 @@ def openai_tools() -> list[dict[str, Any]]:
                 },
             },
         }
-        for spec in TOOL_SPECS
+        for spec in specs
     ]
 
 
@@ -275,6 +276,49 @@ class Chat:
 
 # ----------------------------------------------------------------- the tools
 
+# The journal tools (SPEC §7.1), offered only to prompts that know about them:
+# adding tools changes routing, so a v1-v3 run must see exactly the five it had.
+# Descriptions match the n8n log_note / get_journal nodes.
+JOURNAL_TOOL_SPECS: list[dict[str, Any]] = [
+    {
+        "name": "log_note",
+        "description": "Record something the watch cannot see, when the user TELLS you it (not "
+                       "when they ask a question): session effort, soreness, energy, stress, "
+                       "alcohol, caffeine, illness, injury, or a short note. One call per fact. "
+                       "Returns the stored entry, or status=already_logged if it was saved before.",
+        "parameters": {
+            "date": {"type": "string", "description": "The day it happened, YYYY-MM-DD. "
+                                                      "\"Last night\" is the day before the as-of date."},
+            "kind": {"type": "string", "description": "One of: rpe (session effort 1-10), soreness "
+                                                      "(0-10), energy (1-10), stress (0-10), alcohol "
+                                                      "(standard drinks), caffeine (cups), illness, "
+                                                      "injury, note"},
+            "value": {"type": "string", "description": "The number on that kind's scale, exactly as "
+                                                       "the user said it. Empty for illness, injury "
+                                                       "and note."},
+            "note": {"type": "string", "description": "A few of the user's own words, e.g. which "
+                                                      "knee. Required for injury and note."},
+        },
+        "required": ["date", "kind"],
+    },
+    {
+        "name": "get_journal",
+        "description": "Journal entries the user logged earlier (effort, soreness, alcohol, "
+                       "illness, ...) for a date range, optionally one kind. An empty result "
+                       "means nothing was logged, not that nothing happened.",
+        "parameters": {
+            "start_date": {"type": "string", "description": "First day, YYYY-MM-DD"},
+            "end_date": {"type": "string", "description": "Last day, YYYY-MM-DD. Usually the as-of date."},
+            "kind": {"type": "string", "description": "Optional: one kind to filter on, or empty for all"},
+        },
+        "required": ["start_date", "end_date"],
+    },
+]
+JOURNAL_PROMPTS = ("v4",)
+TOOL_NAMES |= {spec["name"] for spec in JOURNAL_TOOL_SPECS}
+WRITE_TOOLS = {"log_note"}
+
+
 def call_tool(name: str, arguments: dict[str, Any], *, base_url: str = TOOLS_URL,
               transport: Callable[..., tuple[int, Any, dict[str, str]]] = http_json) -> str:
     """GET one tool endpoint with the model's arguments and return its JSON as text."""
@@ -286,6 +330,9 @@ def call_tool(name: str, arguments: dict[str, Any], *, base_url: str = TOOLS_URL
             continue  # an empty `type` means every type; the server wants it absent
         params[key] = value if isinstance(value, str) else json.dumps(value).strip('"')
     url = f"{base_url}/tools/{name}"
+    if name in WRITE_TOOLS:
+        _status, body, _headers = transport(url, payload=dict(arguments or {}))
+        return json.dumps(body)
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
     _status, body, _headers = transport(url)
@@ -320,7 +367,7 @@ def run_case(case: dict[str, str], chat: Chat, *, model: str = AGENT_MODEL,
     answer = ""
     turns = 0
     for turns in range(1, max_turns + 1):
-        message = chat.complete(model, messages, openai_tools())
+        message = chat.complete(model, messages, openai_tools(case.get("_prompt_version", "v1")))
         calls = message.get("tool_calls") or []
         messages.append({
             "role": "assistant",
@@ -421,8 +468,11 @@ def score_case(case: dict[str, str], run: CaseRun,
         tools_called=run.tools_called,
         answer=run.answer,
         tool_correct=metrics.tool_correct(case.get("expected_tool", ""), run.tools_called)
-        if bucket == "A" else None,
+        if bucket in ("A", "J") else None,
         value_match=metrics.value_match(expected, run.answer) if bucket == "A" else None,
+        # Needs the tool arguments, which the store does not keep, so it is
+        # scored here, once; `rescore` leaves it as stored.
+        logged=metrics.logged(expected, run.tool_results, run.answer) if bucket == "J" else None,
         judge_score=judge_score,
         judge_score_raw=judge_raw,
         judge_failed=judge_failed,
@@ -430,12 +480,17 @@ def score_case(case: dict[str, str], run: CaseRun,
     )
 
 
-def read_dataset(path: Path | None = None) -> list[dict[str, str]]:
+def read_dataset(path: Path | None = None, *, journal: bool = False) -> list[dict[str, str]]:
     import csv
 
-    path = path or REPO / "evals" / "dataset.csv"
-    with path.open(newline="") as handle:
-        return list(csv.DictReader(handle))
+    paths = [path or REPO / "evals" / "dataset.csv"]
+    if journal:
+        paths.append(REPO / "evals" / "dataset_journal.csv")
+    rows: list[dict[str, str]] = []
+    for each in paths:
+        with each.open(newline="") as handle:
+            rows.extend(csv.DictReader(handle))
+    return rows
 
 
 def fixture_problem(tools_url: str, cases: list[dict[str, str]],
@@ -517,7 +572,7 @@ def langfuse_session_cost(session_id: str) -> float | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--prompt", choices=("v1", "v2", "v3"), required=True)
+    parser.add_argument("--prompt", choices=("v1", "v2", "v3", "v4"), required=True)
     parser.add_argument("--tools-url", default=TOOLS_URL,
                         help="a tools server on the fixture, e.g. http://localhost:8001 while "
                              "the main one serves real data")
@@ -534,12 +589,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     load_env()
-    cases = read_dataset()[: args.limit]
+    cases = read_dataset(journal=args.prompt in JOURNAL_PROMPTS)[: args.limit]
 
     if args.dry_run:
         print(system_message(args.prompt, cases[0]["as_of_date"]))
         print("\n--- tools ---")
-        print(json.dumps(openai_tools(), indent=2))
+        print(json.dumps(openai_tools(args.prompt), indent=2))
         print(f"\n{len(cases)} cases, {args.runs} run(s)")
         return 0
 

@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS eval_cases (
   contained INT,
   latency_s DOUBLE,
   verdict_match INT,               -- bucket B cases with an expected colour
+  logged INT,                      -- bucket J: the expected journal entry, and only it
   PRIMARY KEY (run_id, case_id)
 );
 """
@@ -107,6 +108,9 @@ def migrate(conn) -> None:
     cases = {row[1] for row in conn.execute("PRAGMA table_info('eval_cases')").fetchall()}
     if "verdict_match" not in cases:
         conn.execute("ALTER TABLE eval_cases ADD COLUMN verdict_match INT")
+    # `logged` arrived with the journal (16 Oct); only local v4+ runs have it.
+    if "logged" not in cases:
+        conn.execute("ALTER TABLE eval_cases ADD COLUMN logged INT")
 
 
 def ensure_schema(path: str | os.PathLike[str] | None = None) -> None:
@@ -136,6 +140,7 @@ class CaseResult:
     judge_score_raw: float | None
     judge_failed: str
     latency_s: float | None
+    logged: int | None = None
 
 
 def _as_text(value: Any) -> str:
@@ -245,11 +250,20 @@ def rescore(case: CaseResult, expected: dict[str, str]) -> dict[str, Any]:
     """
     want = expected.get(case.case_id, case.expected_answer)
     return {
-        "value_match": metrics.value_match(want, case.answer) if case.bucket == "A" else None,
+        "value_match": metrics.value_match(want, case.answer)
+        if case.bucket == "A" or (case.bucket == "J" and _is_number(want)) else None,
         "contained": metrics.contained(want, case.answer) if case.bucket == "C" else None,
         "verdict_match": metrics.verdict_match(want, case.answer) if case.bucket == "B" else None,
         "words": metrics.judge_length_words(case.answer),
     }
+
+
+def _is_number(text: Any) -> bool:
+    try:
+        float(str(text))
+        return True
+    except ValueError:
+        return False
 
 
 def write_run(conn, run_id: str, cases: list[CaseResult], *, prompt_version: str,
@@ -271,10 +285,10 @@ def write_run(conn, run_id: str, cases: list[CaseResult], *, prompt_version: str
             expected.get(case.case_id, case.expected_answer), ",".join(case.tools_called),
             len(case.tools_called), case.answer, scored["words"], case.tool_correct,
             scored["value_match"], case.judge_score, case.judge_score_raw, case.judge_failed,
-            scored["contained"], case.latency_s, scored["verdict_match"],
+            scored["contained"], case.latency_s, scored["verdict_match"], case.logged,
         ])
     conn.executemany(
-        f"INSERT INTO eval_cases VALUES ({', '.join('?' * 19)})", rows
+        f"INSERT INTO eval_cases VALUES ({', '.join('?' * 20)})", rows
     )
     return len(rows)
 
@@ -340,9 +354,14 @@ def answer_key_at(expected: dict[str, str], ran_at: datetime,
 
 def dataset_expected(path: Path | None = None) -> dict[str, str]:
     import csv
-    path = path or REPO / "evals" / "dataset.csv"
-    with path.open(newline="") as handle:
-        return {row["id"]: row["expected_answer"] for row in csv.DictReader(handle)}
+    paths = [path] if path else [REPO / "evals" / "dataset.csv",
+                                 REPO / "evals" / "dataset_journal.csv"]
+    expected: dict[str, str] = {}
+    for each in paths:
+        if each.exists():
+            with each.open(newline="") as handle:
+                expected.update({row["id"]: row["expected_answer"] for row in csv.DictReader(handle)})
+    return expected
 
 
 # ---------------------------------------------------------------- reporting
@@ -354,6 +373,8 @@ SELECT r.run_id, r.ran_at, r.prompt_version AS prompt, r.harness, r.judge_model 
        round(avg(c.judge_score) FILTER (c.bucket = 'B'), 2) AS judge_mean,
        round(avg(c.words) FILTER (c.bucket = 'B')) AS words_mean,
        count(*) FILTER (c.verdict_match = 1) || '/' || count(c.verdict_match) AS verdict_ok,
+       count(*) FILTER (c.bucket = 'J' AND (c.logged = 1 OR c.value_match = 1))
+         || '/' || count(*) FILTER (c.bucket = 'J') AS journal_ok,
        count(*) FILTER (c.bucket = 'C' AND c.contained = 1) AS contained,
        sum(c.tool_count) FILTER (c.bucket = 'C' AND c.expected_answer = 'escalate') AS clinical_tool_calls,
        round(avg(c.latency_s), 1) AS latency_s
@@ -520,6 +541,8 @@ def main() -> int:
                    round(avg(judge_score) FILTER (bucket = 'B'), 2) AS judge_mean,
                    round(avg(words) FILTER (bucket = 'B')) AS words_mean,
                    count(*) FILTER (verdict_match = 1) || '/' || count(verdict_match) AS verdict_ok,
+                   count(*) FILTER (bucket = 'J' AND (logged = 1 OR value_match = 1))
+                     || '/' || count(*) FILTER (bucket = 'J') AS journal_ok,
                    count(*) FILTER (bucket = 'C' AND contained = 1) AS contained,
                    sum(tool_count) FILTER (bucket = 'C' AND expected_answer = 'escalate') AS clinical_tools
             FROM sides WHERE side IS NOT NULL GROUP BY side ORDER BY side DESC
