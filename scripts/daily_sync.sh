@@ -3,7 +3,7 @@
 # Pulls the last 30 days (already-final days are reused) into wearable-real.duckdb.
 # launchd starts with a bare environment, so the interpreter path is absolute.
 # It notifies (macOS) when the sync fails or last night's sleep is missing or
-# untrustworthy; a quiet run means all is well.
+# untrustworthy, or a model key behind LiteLLM is rejected; a quiet run means all is well.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PYTHON=/Users/vamsikpalle/.pyenv/versions/3.12.8/bin/python
@@ -30,5 +30,10 @@ $PYTHON -c "import duckdb; c=duckdb.connect('wearable-real.duckdb', read_only=Tr
 if ! problem=$($PYTHON -m fetcher.check --db wearable-real.duckdb); then
   echo "check: $problem"
   notify "Last night's sleep" "$problem"
+fi
+# A dead model key is otherwise invisible: chat falls back to Gemini's free tier.
+if ! problem=$($PYTHON -m fetcher.llm_check); then
+  echo "llm: $problem"
+  notify "Coach models" "${problem//$'\n'/ | }"
 fi
 echo "=== $(date '+%F %T') sync done"
