@@ -1,5 +1,5 @@
 # Everything runs locally: health data never leaves the machine. The only
-# outbound traffic is the agent's and the judge's LLM calls (SPEC §5).
+# outbound traffic is the agent's LLM calls (SPEC §5).
 services:
   tools:
     build: .
@@ -7,19 +7,15 @@ services:
     ports: ["8000:8000"]
     volumes:
       # The DuckDB file is built on the host by `python -m loader.load_garmin`.
-      # Which database the agent sees. Default: the fixture, which the eval
-      # dataset's answer key is pinned to. Point it at the real one with
-      # WEARABLE_DB_FILE=./wearable-real.duckdb in .env, then
-      # `docker compose up -d tools`. Switch back before any eval run.
-      - ${WEARABLE_DB_FILE:-./wearable.duckdb}:/data/wearable.duckdb:ro
+      # The real Garmin data; WEARABLE_DB_FILE in .env overrides the file.
+      - ${WEARABLE_DB_FILE:-./wearable-real.duckdb}:/data/wearable.duckdb:ro
       # The journal is the one thing the agent writes (tools/journal.py), so it
       # gets its own writable directory. A directory, not a file: DuckDB writes
       # a .wal beside the database.
       - ./journals:/journals
     environment:
-      # Picks the journal paired with the mounted dataset, so the fixture and
-      # the real data never share one.
-      - WEARABLE_DB_FILE=${WEARABLE_DB_FILE:-./wearable.duckdb}
+      # Picks the journal paired with the mounted dataset.
+      - WEARABLE_DB_FILE=${WEARABLE_DB_FILE:-./wearable-real.duckdb}
       - JOURNAL_DIR=/journals
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]

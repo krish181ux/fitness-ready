@@ -1,4 +1,4 @@
-"""DuckDB connection helpers shared by the loader, the tools server and the evals."""
+"""DuckDB connection helpers shared by the loader and the tools server."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 import duckdb
 
 REPO_ROOT = Path(__file__).resolve().parent
-DEFAULT_DB_PATH = REPO_ROOT / "wearable.duckdb"
+DEFAULT_DB_PATH = REPO_ROOT / "wearable-real.duckdb"
 SCHEMA_PATH = REPO_ROOT / "loader" / "schema.sql"
 
 

@@ -1,6 +1,6 @@
 """Phase 1: Garmin export -> DuckDB (SPEC §6.2).
 
-    python -m loader.load_garmin raw/fixture --db wearable.duckdb
+    python -m loader.load_garmin raw/api --db wearable-real.duckdb
 
 Idempotent: rows are replaced by primary key, so re-running a load (or loading
 an overlapping later export) converges rather than duplicating.
@@ -249,7 +249,7 @@ def load(root: Path, conn: duckdb.DuckDBPyConnection) -> LoadStats:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", nargs="?", default="raw", type=Path, help="unzipped export root")
-    parser.add_argument("--db", default=None, help="DuckDB file (default: $WEARABLE_DB or ./wearable.duckdb)")
+    parser.add_argument("--db", default=None, help="DuckDB file (default: $WEARABLE_DB or ./wearable-real.duckdb)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 

@@ -4,7 +4,7 @@
 
 n8n calls these with HTTP Request tool nodes. There is deliberately no
 free-form SQL endpoint in Phase 1 (SPEC §11 open decision 1): named tools make
-"did the agent call the right tool" a clean pass/fail for the eval harness.
+"which tool answered" visible in every trace, and raw data stays behind a guardrail.
 """
 
 from __future__ import annotations
@@ -175,13 +175,34 @@ class JournalEntry(BaseModel):
     # n8n's $fromAI sends "" for an omitted optional value.
     value: float | str | None = None
     note: str | None = None
+    activity_id: int | str | None = Field(
+        default=None, description="rpe only: the session it rates; omit if that day had one session")
+
+
+def _sessions_on(conn: duckdb.DuckDBPyConnection, day: date) -> list[dict[str, Any]]:
+    cursor = conn.execute(
+        "SELECT activity_id, type, strftime(start_time, '%H:%M') AS start_time, duration_min "
+        "FROM activities WHERE CAST(start_time AS DATE) = ? ORDER BY start_time", [day])
+    names = [d[0] for d in cursor.description]
+    return [dict(zip(names, row)) for row in cursor.fetchall()]
 
 
 @app.post("/tools/log_note", summary="Record something the watch can't see, in the journal")
 def log_note(
     entry: JournalEntry,
     conn: duckdb.DuckDBPyConnection = Depends(get_journal_conn),
+    wearable: duckdb.DuckDBPyConnection = Depends(get_conn),
 ) -> dict[str, Any]:
+    activity_id = entry.activity_id
+    if isinstance(activity_id, str):
+        if not activity_id.strip():
+            activity_id = None
+        elif activity_id.strip().isdigit():
+            activity_id = int(activity_id)
+        else:
+            raise HTTPException(status_code=422, detail=(
+                f"activity_id {activity_id!r} is not a number. Use the activity_id from "
+                "list_activities, or omit it."))
     value = entry.value
     if isinstance(value, str):
         try:
@@ -191,7 +212,9 @@ def log_note(
                 f"value {value!r} is not a number. Send the number alone, e.g. value=7, "
                 "and put any words in note."))
     try:
-        return journal.log_note(conn, entry.day, entry.kind, value, entry.note)
+        return journal.log_note(conn, entry.day, entry.kind, value, entry.note,
+                                activity_id=activity_id,
+                                sessions=_sessions_on(wearable, entry.day))
     except journal.JournalError as error:
         raise HTTPException(status_code=422, detail=str(error))
 
@@ -202,12 +225,20 @@ def get_journal(
     end_date: date,
     kind: str | None = Query(default=None, description=" | ".join(journal.KINDS)),
     conn: duckdb.DuckDBPyConnection = Depends(get_journal_conn),
+    wearable: duckdb.DuckDBPyConnection = Depends(get_conn),
 ) -> dict[str, Any]:
     _validate_range(start_date, end_date)
     try:
-        return journal.get_journal(conn, start_date, end_date, kind=kind or None)
+        result = journal.get_journal(conn, start_date, end_date, kind=kind or None)
     except journal.JournalError as error:
         raise HTTPException(status_code=422, detail=str(error))
+    linked = [r["activity_id"] for r in result["rows"] if r.get("activity_id")]
+    if linked:
+        minutes = dict(wearable.execute(
+            f"SELECT activity_id, duration_min FROM activities WHERE activity_id IN "
+            f"({', '.join('?' * len(linked))})", linked).fetchall())
+        journal.add_session_load(result["rows"], minutes)
+    return result
 
 
 def main() -> None:  # pragma: no cover - convenience entrypoint

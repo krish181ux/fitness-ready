@@ -26,8 +26,8 @@ from pathlib import Path
 from db import REPO_ROOT
 
 LITELLM_URL = "http://localhost:4000"
-# Every model in litellm/config.yaml: the agent, its fallbacks, the judges.
-MODELS = ("claude-sonnet-5", "claude-opus-5", "gpt-5.1", "gemini-3.5-flash")
+# Every model in litellm/config.yaml: the agent and its fallbacks.
+MODELS = ("claude-sonnet-5", "gpt-5.1", "gemini-3.5-flash")
 TIMEOUT_S = 60
 
 # (status, body) for one chat call; injectable so tests need no proxy.

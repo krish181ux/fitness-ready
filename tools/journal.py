@@ -1,7 +1,5 @@
 """The journal: what the watch can't see, logged by the agent from chat (SPEC §7.1).
 
-    python -m tools.journal --seed-fixture     # the fixture journal the evals read
-
 Effort, soreness, illness, alcohol and the like. Entries are typed, not free
 "memories": every kind has a fixed meaning and a validated range, so a logged
 value can be checked by an eval and queried by SQL like any wearable number.
@@ -10,14 +8,15 @@ Free text is kept, as the user's own words, never as a fact the model inferred.
 The journal is its own DuckDB file, never the wearable database: the loader
 writes that from the host while the tools server reads it, and two writers on
 one file is how a database gets corrupted. The file is paired with the dataset
-it annotates -- `journals/wearable-real.journal.duckdb` for the real data,
-`journals/wearable.journal.duckdb` for the fixture -- so an eval run against the
-fixture can never write test entries into the real journal.
+it annotates: `journals/wearable-real.journal.duckdb` for the real data.
+
+Effort (`rpe`) belongs to a session, not a day: rpe x minutes is session-RPE
+load (Foster 2001), the one per-session load figure this watch can support, as
+it reports no training effect. So an rpe entry carries the activity it rates.
 """
 
 from __future__ import annotations
 
-import argparse
 import os
 import uuid
 from datetime import date, datetime
@@ -36,8 +35,10 @@ CREATE TABLE IF NOT EXISTS journal (
   value     DOUBLE,              -- on the kind's scale; NULL for kinds without one
   note      VARCHAR,             -- the user's own words, short
   logged_at TIMESTAMP NOT NULL,
-  source    VARCHAR NOT NULL     -- chat | fixture
+  source    VARCHAR NOT NULL,    -- chat
+  activity_id BIGINT             -- rpe only: the session it rates; NULL if the watch did not record it
 );
+ALTER TABLE journal ADD COLUMN IF NOT EXISTS activity_id BIGINT;
 """
 
 # kind -> (unit or scale, low, high, value required). A kind with no scale
@@ -57,15 +58,7 @@ KINDS: dict[str, tuple[str | None, float | None, float | None, bool]] = {
 NOTE_REQUIRED = ("injury", "note")
 NOTE_MAX_CHARS = 280
 MAX_RANGE_DAYS = 366
-
-# Fixed ids, so reseeding converges instead of duplicating. The evals' read
-# cases are answered from these rows (evals/ground_truth.py).
-FIXTURE_ENTRIES = (
-    ("fixture-01", date(2026, 9, 9), "rpe", 7, "strength felt heavy"),
-    ("fixture-02", date(2026, 9, 5), "alcohol", 2, "two glasses of wine at dinner"),
-    ("fixture-03", date(2026, 9, 11), "soreness", 5, "calves after badminton"),
-    ("fixture-04", date(2026, 9, 7), "energy", 4, None),
-)
+SESSION_KINDS = ("rpe",)
 
 
 class JournalError(ValueError):
@@ -122,23 +115,58 @@ def validate(kind: str, value: float | None, note: str | None, day: date,
     return kind, value, note
 
 
+def resolve_session(kind: str, activity_id: int | None,
+                    sessions: list[dict[str, Any]] | None) -> int | None:
+    """The activity an entry rates, or None. `sessions` are that day's activities.
+
+    One session that day links itself. Several need the agent to say which, so
+    effort is never pinned on the wrong one. None that day is allowed: the watch
+    may not have recorded it, and the effort is still worth keeping.
+    """
+    if kind not in SESSION_KINDS:
+        if activity_id is not None:
+            raise JournalError(f"kind={kind} is about the day, not a session; omit activity_id.")
+        return None
+    if sessions is None:
+        return activity_id
+    ids = {int(a["activity_id"]) for a in sessions}
+    listing = "; ".join(f"activity_id={a['activity_id']} {a['type']} at {a['start_time']} "
+                        f"({a['duration_min']:.0f} min)" for a in sessions)
+    if activity_id is not None:
+        if int(activity_id) not in ids:
+            raise JournalError(f"activity_id {activity_id} is not a session on that date. "
+                               f"Sessions that day: {listing or 'none'}.")
+        return int(activity_id)
+    if len(sessions) == 1:
+        return int(sessions[0]["activity_id"])
+    if len(sessions) > 1:
+        raise JournalError(f"There were {len(sessions)} sessions that day: {listing}. "
+                           "Ask the user which one this effort is for, then call again "
+                           "with its activity_id.")
+    return None
+
+
 def log_note(conn: duckdb.DuckDBPyConnection, day: date, kind: str, value: float | None = None,
-             note: str | None = None, *, today: date | None = None,
-             source: str = "chat") -> dict[str, Any]:
+             note: str | None = None, *, today: date | None = None, source: str = "chat",
+             activity_id: int | None = None,
+             sessions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Write one entry, or return the identical one already there."""
     kind, value, note = validate(kind, value, note, day, today or date.today())
+    activity_id = resolve_session(kind, activity_id, sessions)
     existing = conn.execute(
         "SELECT entry_id FROM journal WHERE date = ? AND kind = ? "
-        "AND value IS NOT DISTINCT FROM ? AND note IS NOT DISTINCT FROM ?",
-        [day, kind, value, note],
+        "AND value IS NOT DISTINCT FROM ? AND note IS NOT DISTINCT FROM ? "
+        "AND activity_id IS NOT DISTINCT FROM ?",
+        [day, kind, value, note, activity_id],
     ).fetchone()
     if existing:
         # A retried tool call must not count the same drink twice.
         return {"status": "already_logged", "entry": _entry(conn, existing[0])}
     entry_id = str(uuid.uuid4())
     conn.execute(
-        "INSERT INTO journal VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [entry_id, day, kind, value, note, datetime.now(), source],
+        "INSERT INTO journal (entry_id, date, kind, value, note, logged_at, source, activity_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [entry_id, day, kind, value, note, datetime.now(), source, activity_id],
     )
     return {"status": "logged", "entry": _entry(conn, entry_id)}
 
@@ -147,7 +175,7 @@ def get_journal(conn: duckdb.DuckDBPyConnection, start_date: date, end_date: dat
                 kind: str | None = None) -> dict[str, Any]:
     if kind is not None and kind not in KINDS:
         raise JournalError(f"Unknown kind {kind!r}. Use one of: {', '.join(KINDS)}, or omit it.")
-    sql = ("SELECT entry_id, date, kind, value, note, logged_at FROM journal "
+    sql = ("SELECT entry_id, date, kind, value, note, activity_id, logged_at FROM journal "
            "WHERE date BETWEEN ? AND ?")
     params: list[Any] = [start_date, end_date]
     if kind:
@@ -165,18 +193,19 @@ def get_journal(conn: duckdb.DuckDBPyConnection, start_date: date, end_date: dat
     }
 
 
-def seed_fixture(conn: duckdb.DuckDBPyConnection) -> int:
-    for entry_id, day, kind, value, note in FIXTURE_ENTRIES:
-        conn.execute(
-            "INSERT OR REPLACE INTO journal VALUES (?, ?, ?, ?, ?, ?, 'fixture')",
-            [entry_id, day, kind, value, note, datetime(2026, 9, 13, 12, 0)],
-        )
-    return len(FIXTURE_ENTRIES)
+def add_session_load(rows: list[dict[str, Any]], minutes: dict[int, float]) -> None:
+    """rpe x session minutes, in arbitrary units (Foster's session-RPE load)."""
+    for row in rows:
+        duration = minutes.get(row.get("activity_id"))
+        if row["kind"] == "rpe" and row["value"] is not None and duration:
+            row["session_minutes"] = round(duration)
+            row["session_load"] = round(row["value"] * duration)
 
 
 def _entry(conn: duckdb.DuckDBPyConnection, entry_id: str) -> dict[str, Any]:
     cursor = conn.execute(
-        "SELECT entry_id, date, kind, value, note, logged_at FROM journal WHERE entry_id = ?",
+        "SELECT entry_id, date, kind, value, note, activity_id, logged_at FROM journal "
+        "WHERE entry_id = ?",
         [entry_id],
     )
     return _row(cursor.description, cursor.fetchone())
@@ -189,19 +218,3 @@ def _row(description, values) -> dict[str, Any]:
     if row["value"] is not None and float(row["value"]).is_integer():
         row["value"] = int(row["value"])
     return row
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--seed-fixture", action="store_true",
-                        help="write the fixture entries into the fixture's journal")
-    args = parser.parse_args()
-    if args.seed_fixture:
-        path = REPO_ROOT / "journals" / "wearable.journal.duckdb"
-        with connect(path) as conn:
-            print(f"seeded {seed_fixture(conn)} entries into {path}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

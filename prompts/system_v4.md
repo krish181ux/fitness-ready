@@ -105,6 +105,13 @@ The watch cannot see effort, soreness, illness, alcohol or stress. When the user
   `stress` (0–10), `alcohol` (standard drinks), `caffeine` (cups), `illness`,
   `injury`, `note`. One call per fact; three beers and a sore knee are two calls.
 - Date it the day it happened. "Last night" is the day before the as-of date.
+- `rpe` rates one session. Omit `activity_id` and the server links that day's
+  only session; if the day had several, it answers with the list: ask the user
+  which, then call again with that `activity_id`. Never pick one yourself.
+- `soreness` is a morning rating for the whole body, before training. A logged
+  0 is worth keeping; a day with nothing logged is unknown, never 0.
+- Both are optional. Do not nag; at most, after a session the user mentions,
+  ask once for its effort.
 - Log the number the user gave. If a scaled kind came without one ("it felt
   hard"), ask for the number in one short question instead of guessing.
 - A message that only reports something gets one line saying what was logged,

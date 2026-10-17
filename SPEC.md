@@ -211,6 +211,10 @@ Readiness heuristic (the reconstruction of what the watch doesn't provide): a si
 
 ## 9. Evaluation design
 
+> **Removed 17 Oct 2026.** The synthetic dataset, the eval harness and the
+> eval store were deleted; see the implementation note of that date. This
+> section and the notes below that cite eval results are kept as history.
+
 ### 9.1 Dataset
 
 ~30 test cases, stored in a Google Sheet or n8n data table. Columns: `id, bucket, question, as_of_date, expected_tool, expected_answer, rubric_notes`. `as_of_date` pins the agent's "today" so ground truth is stable.
@@ -746,6 +750,32 @@ impact. An undocumented FIT message appears to hold aerobic 3.9 and anaerobic
 The fixture leaves the columns null, so no eval answer changed; a v4 run after
 the prompt line scored tool 12/12, value 12/12, verdict 3/3, journal 7/7, all
 red flags contained, judge 5.00.
+
+### Real data only; effort rates a session (17 Oct 2026)
+
+The synthetic `wearable.duckdb`, its journal, `evals/` (datasets, ground truth,
+metrics, judge prompts, run store, local harness, results), the eval
+dashboard, the n8n eval workflows and the judge model in LiteLLM were deleted
+at the owner's choice. The cost, stated when it was chosen: no answer key, so
+a prompt or rule change is no longer measured before it ships. What still
+checks correctness is the unit suite, which builds synthetic rows in a temp
+directory and asserts the §6.3 definitions, the verdict and the tool contracts.
+`db.py`, compose and the Makefile default to `wearable-real.duckdb`. A backup of
+the deleted local databases was taken before removal; everything tracked is in
+git history before this commit.
+
+The journal gains `activity_id`. Effort (`rpe`) rates a session, not a day: a
+day with one activity links it, a day with several returns the list so the
+agent asks, and a day with none keeps the entry unlinked (the watch may have
+missed it). `get_journal` adds `session_load` = rpe x minutes (Foster 2001's
+session-RPE load), the per-session load figure a watch without training effect
+can support. Soreness stays a daily, whole-body, morning rating. Both are
+optional, and a day with nothing logged is unknown, never 0.
+
+Found while wiring it: the live n8n agent had lost its `log_note` and
+`get_journal` nodes since 16 Oct, almost certainly a stale n8n tab saved over
+the script's change. They were re-added, and `n8n/workflow_agent.json` now
+holds an export of the live workflow.
 
 ### Recovery the watch never reports (17 Oct 2026)
 

@@ -5,9 +5,7 @@
 # callbacks write the traces instead. See the SPEC implementation note.
 #
 # Model names on the left are what n8n asks for; the right-hand side pins the
-# provider snapshot. Judge models are pinned to dated or stable releases on
-# purpose: a moving alias silently changes the grader between eval runs, which
-# would make any run-over-run comparison meaningless.
+# provider snapshot.
 
 model_list:
   # --- agent ---------------------------------------------------------------
@@ -16,21 +14,14 @@ model_list:
       model: anthropic/claude-sonnet-5
       api_key: os.environ/ANTHROPIC_API_KEY
 
-  # --- judges (SPEC §9.4: separate model from the agent) -------------------
-  - model_name: claude-opus-5
-    litellm_params:
-      model: anthropic/claude-opus-5
-      api_key: os.environ/ANTHROPIC_API_KEY
-
+  # --- agent fallbacks only (router_settings below) ------------------------
   - model_name: gpt-5.1
     litellm_params:
       model: openai/gpt-5.1-2025-11-13
       api_key: os.environ/OPENAI_API_KEY
 
-  # --- agent fallbacks only (router_settings below) ------------------------
   # Flash, not Pro: this key is on Gemini's free tier, where every Pro model's
-  # quota is 0. gemini-2.5-pro, the judge option that used to sit here, is
-  # retired for new keys and 404s.
+  # quota is 0. gemini-2.5-pro is retired for new keys and 404s.
   - model_name: gemini-3.5-flash
     litellm_params:
       model: gemini/gemini-3.5-flash
@@ -52,9 +43,6 @@ router_settings:
   # rate limit, quota, outage, a dropped connection -- moves the call to the next
   # (2026-09-30: two chat runs died on "AnthropicException - Server disconnected"
   # with nowhere to go). Langfuse records which model actually answered.
-  #
-  # Judges get no fallbacks on purpose. A judge that silently changes vendor
-  # mid-run makes its scores incomparable; it should fail instead.
   fallbacks:
     - claude-sonnet-5: ["gpt-5.1", "gemini-3.5-flash"]
   # One quick retry for a blip before moving on; more just delays the fallback.

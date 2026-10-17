@@ -1,8 +1,8 @@
 """Derived definitions from SPEC §6.3.
 
 These are the single source of truth for "hard session", "resting HR delta",
-"HRV vs baseline", "sleep is trustworthy" and the readiness verdict. The tools server, the eval ground
-truth and the tests all import from here, so a definition can only change in one
+"HRV vs baseline", "sleep is trustworthy" and the readiness verdict. The tools server
+and the tests both import from here, so a definition can only change in one
 place. Each rule is expressed twice -- once as a SQL fragment for DuckDB, once as
 a Python predicate for row-level use -- and the tests assert the two agree.
 """
