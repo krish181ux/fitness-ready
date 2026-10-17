@@ -188,3 +188,14 @@ def test_two_missing_checks_is_insufficient_data_not_red():
 
 def test_no_hard_session_on_record_means_nothing_to_recover_from():
     assert _colour(hard=None)["colour"] == "green"
+
+
+def test_assumed_recovery_is_labelled_in_the_verdict():
+    """The real watch reports no recovery time; the verdict must say it assumed one."""
+    hard = {"recovery_remaining_hours": 15, "recovery_basis": "assumed", "hours_ago": 9.3}
+    verdict = _colour(hard=hard)
+    recovery = next(c for c in verdict["checks"] if c["name"] == "recovery")
+    assert recovery["result"] == "fail" and verdict["colour"] == "amber"
+    assert f"assumed {derived.ASSUMED_RECOVERY_HOURS} h" in recovery["value"]
+    watch = _colour(hard={"recovery_remaining_hours": 15, "recovery_basis": "watch"})
+    assert "assumed" not in next(c for c in watch["checks"] if c["name"] == "recovery")["value"]

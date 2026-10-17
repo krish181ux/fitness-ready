@@ -259,7 +259,8 @@ def get_readiness_inputs(conn: duckdb.DuckDBPyConnection, as_of: date | None = N
         gaps.append("no hard session on record")
     else:
         hours_ago = derived.hours_between(datetime.fromisoformat(hard["start_time"]), reference)
-        recovery = hard["recovery_time_hours"] or 0
+        watch_hours = hard["recovery_time_hours"]
+        recovery = watch_hours if watch_hours is not None else derived.ASSUMED_RECOVERY_HOURS
         last_hard = {
             "activity_id": hard["activity_id"],
             "type": hard["type"],
@@ -267,6 +268,7 @@ def get_readiness_inputs(conn: duckdb.DuckDBPyConnection, as_of: date | None = N
             "hours_ago": hours_ago,
             "recovery_time_hours": hard["recovery_time_hours"],
             "recovery_remaining_hours": max(0, round(recovery - hours_ago)),
+            "recovery_basis": "watch" if watch_hours is not None else "assumed",
             "aerobic_te": hard["aerobic_te"],
             "anaerobic_te": hard["anaerobic_te"],
         }

@@ -207,3 +207,38 @@ def test_readiness_inputs_carry_the_verdict(client):
     assert verdict["colour"] == "red"
     assert verdict["failed"] == ["hrv", "resting_hr", "recovery"]
     assert verdict["missing"] == []
+
+
+def test_a_hard_session_without_recovery_time_is_not_counted_as_recovered(
+    db_file, tmp_path, monkeypatch
+):
+    """0 of 260 real activities carry recovery time; reading that as 0 h passed every day."""
+    import shutil
+
+    from fastapi.testclient import TestClient
+
+    from db import connect
+    from tools.derived import ASSUMED_RECOVERY_HOURS
+    from tools.server import app
+
+    copy = tmp_path / "no_recovery.duckdb"
+    shutil.copy(db_file, copy)
+    with connect(copy) as writer:
+        # A hard run on the morning of the as-of day, 9 h before the 18:00 reference.
+        writer.execute(
+            "INSERT INTO activities (activity_id, start_time, type, duration_min, avg_hr, "
+            "hard_minutes, recovery_time_hours) VALUES (999, ?, 'running', 60, 150, 31.9, NULL)",
+            [f"{AS_OF} 09:00:00"],
+        )
+    monkeypatch.setenv("WEARABLE_DB", str(copy))
+    with TestClient(app) as client:
+        body = client.get("/tools/get_readiness_inputs", params={"date": AS_OF}).json()
+    hard = body["last_hard_session"]
+    assert hard["activity_id"] == 999 and hard["recovery_basis"] == "assumed"
+    assert hard["recovery_remaining_hours"] == ASSUMED_RECOVERY_HOURS - 9
+    assert "recovery" in body["verdict"]["failed"]
+
+
+def test_the_watchs_recovery_time_is_used_when_present(client):
+    hard = client.get("/tools/get_readiness_inputs", params={"date": AS_OF}).json()["last_hard_session"]
+    assert hard["recovery_basis"] == "watch"

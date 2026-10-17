@@ -203,7 +203,7 @@ System prompt principles (the prompt itself is versioned in Langfuse; these are 
 5. **Escalate, don't coach, on red flags.** Chest pain, fainting, resting HR spike with symptoms, medication questions, anything clinical → say this is outside scope and recommend a clinician. Do not soften with a workout suggestion.
 6. **Stay in scope.** Off-topic questions get a short redirect, not an answer.
 
-Readiness heuristic (the reconstruction of what the watch doesn't provide): a simple rubric, not a model. Green if sleep trustworthy and ≥70, HRV within baseline, resting HR delta ≤ +3, recovery remaining 0. Amber on one failed check. Red on two or more. A missing input is not a failed check: one missing check leaves the colour to the other three, two or more give `insufficient_data`. Since 10 Oct the tool computes it (`verdict` in `get_readiness_inputs`, `tools/derived.readiness_verdict`) and prompt v3 reports it; v1 and v2 had the model apply it. The heuristic is intentionally visible so it can be evaluated and iterated on.
+Readiness heuristic (the reconstruction of what the watch doesn't provide): a simple rubric, not a model. Green if sleep trustworthy and ≥70, HRV within baseline, resting HR delta ≤ +3, recovery remaining 0. Amber on one failed check. Red on two or more. A missing input is not a failed check: one missing check leaves the colour to the other three, two or more give `insufficient_data`. Since 10 Oct the tool computes it (`verdict` in `get_readiness_inputs`, `tools/derived.readiness_verdict`) and prompt v3 reports it; v1 and v2 had the model apply it. When the watch reports no recovery time for the last hard session, remaining recovery is computed from an assumed 24 h window and the check's value says so (17 Oct). The heuristic is intentionally visible so it can be evaluated and iterated on.
 
 ## 9. Evaluation design
 
@@ -725,6 +725,22 @@ scores each run against the key of its own day — today's metrics, the old
 answer. Readiness on the pinned day is unchanged. Strength sessions carry no
 recovery hours, so a hard strength session never fails the Recovery check by
 itself.
+
+### Recovery the watch never reports (17 Oct 2026)
+
+The Recovery check read `recovery_time_hours or 0`. On the real data that
+column is empty for all 260 activities, so remaining recovery was always 0 and
+the check passed every day: on 17 Oct a hard 7.6 km run (31.9 min in zone 4)
+finished nine hours before the reference time and counted as fully recovered.
+The fixture carries recovery time on all 140 activities, which is why no eval
+saw it.
+
+When the watch gives no figure, `get_readiness_inputs` now assumes 24 h -- the
+threshold that already makes a session hard under §6.3 -- and returns
+`recovery_basis: "assumed"`; the verdict's value names the assumption. Marking
+the check missing instead was rejected: with HRV still onboarding that would
+have made most real days `insufficient_data`. The fixture, and so every eval
+answer, is unchanged.
 
 ### The readiness verdict moves into the tool (10 Oct 2026)
 

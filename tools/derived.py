@@ -125,6 +125,12 @@ def hrv_vs_baseline(
 READINESS_SLEEP_SCORE_MIN = 70
 READINESS_RESTING_HR_DELTA_MAX = 3.0
 READINESS_MAX_MISSING = 1  # more missing checks than this -> insufficient_data
+# The real watch reports recovery time for no activity at all (0 of 260), so
+# remaining recovery read as 0 and the Recovery check could never fail: a hard
+# run that morning counted as fully recovered. When the watch gives no figure,
+# assume this window -- the same 24 h that makes a session hard under §6.3.
+# A proxy, labelled as one in the verdict.
+ASSUMED_RECOVERY_HOURS = 24
 
 
 def readiness_verdict(
@@ -188,12 +194,11 @@ def readiness_verdict(
         check("recovery", "pass", "no hard session on record", recovery_rule)
     else:
         remaining = last_hard_session.get("recovery_remaining_hours") or 0
-        check(
-            "recovery",
-            "pass" if remaining == 0 else "fail",
-            f"{remaining} h remaining",
-            recovery_rule,
-        )
+        value = f"{remaining} h remaining"
+        if last_hard_session.get("recovery_basis") == "assumed":
+            value += (f" (assumed {ASSUMED_RECOVERY_HOURS} h after a hard session "
+                      f"{last_hard_session.get('hours_ago')} h ago; the watch gave no recovery time)")
+        check("recovery", "pass" if remaining == 0 else "fail", value, recovery_rule)
 
     failed = [c["name"] for c in checks if c["result"] == "fail"]
     missing = [c["name"] for c in checks if c["result"] == "missing"]
