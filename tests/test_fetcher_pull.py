@@ -292,3 +292,19 @@ def test_pulled_files_load_and_converge_with_the_export(tmp_path):
     assert from_api == after_export == [("running", 50.0, 10.0, 12.0, 42.5, 700, 20.0)]
     assert daily == 3
     assert unmapped == 0  # the normaliser emits only keys the loader maps
+
+
+def test_api_and_export_both_carry_the_labels_and_body_battery():
+    """The normaliser used to drop these, so 0 of 260 real activities had them."""
+    labels = {
+        "differenceBodyBattery": -19, "trainingEffectLabel": "VO2MAX",
+        "aerobicTrainingEffectMessage": "IMPROVING_VO2_MAX_15",
+        "anaerobicTrainingEffectMessage": "MINOR_ANAEROBIC_BENEFIT_15",
+    }
+    api = _row(nz.activity({**API_RUN, **labels}))
+    export = _row({**EXPORT_RUN, **labels})
+    for row in (api, export):
+        assert row["body_battery_impact"] == -19
+        assert row["te_label"] == "VO2MAX"
+        assert row["aerobic_te_message"] == "IMPROVING_VO2_MAX"
+        assert row["anaerobic_te_message"] == "MINOR_ANAEROBIC_BENEFIT"

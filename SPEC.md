@@ -110,6 +110,10 @@ CREATE TABLE activities (
   aerobic_te DOUBLE, anaerobic_te DOUBLE,   -- Garmin training effect 0-5
   recovery_time_hours INT,
   avg_speed_kmh DOUBLE, elevation_gain_m DOUBLE,
+  hard_minutes DOUBLE,          -- minutes at or above HR zone 4 (§6.3)
+  body_battery_impact INT,      -- Body Battery the session cost, e.g. -19
+  te_label VARCHAR,             -- primary benefit, e.g. VO2MAX
+  aerobic_te_message VARCHAR, anaerobic_te_message VARCHAR,  -- e.g. IMPROVING_VO2_MAX
   source VARCHAR, loaded_at TIMESTAMP
 );
 
@@ -725,6 +729,23 @@ scores each run against the key of its own day — today's metrics, the old
 answer. Readiness on the pinned day is unchanged. Strength sessions carry no
 recovery hours, so a hard strength session never fails the Recovery check by
 itself.
+
+### Training-effect labels and Body Battery impact (17 Oct 2026)
+
+The vivoactive 5 sends no numeric training effect, in the API, the activity
+detail endpoint or the FIT file's documented fields. It does send a label
+(`trainingEffectLabel`: VO2MAX), two messages (`IMPROVING_VO2_MAX_15`,
+`MINOR_ANAEROBIC_BENEFIT_15`) and `differenceBodyBattery`, the Body Battery a
+session cost (the app's "net impact"). The loader dropped all four. They are now
+columns, with the trailing message id stripped so it cannot be read as a score,
+and `list_activities` and `last_hard_session` return them. Prompt v4 describes
+a session from them when `aerobic_te` is null, instead of "no data came through".
+After reloading, all 260 real activities carry labels and 249 a Body Battery
+impact. An undocumented FIT message appears to hold aerobic 3.9 and anaerobic
+1.9 for the 17 Oct run; it is not used, because nothing confirms the reading.
+The fixture leaves the columns null, so no eval answer changed; a v4 run after
+the prompt line scored tool 12/12, value 12/12, verdict 3/3, journal 7/7, all
+red flags contained, judge 5.00.
 
 ### Recovery the watch never reports (17 Oct 2026)
 

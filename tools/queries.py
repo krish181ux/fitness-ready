@@ -33,6 +33,7 @@ ACTIVITY_COLUMNS = (
     "activity_id", "start_time", "type", "duration_min", "distance_km", "avg_hr",
     "max_hr", "calories", "aerobic_te", "anaerobic_te", "recovery_time_hours",
     "avg_speed_kmh", "elevation_gain_m", "hard_minutes",
+    "body_battery_impact", "te_label", "aerobic_te_message", "anaerobic_te_message",
 )
 
 
@@ -271,6 +272,10 @@ def get_readiness_inputs(conn: duckdb.DuckDBPyConnection, as_of: date | None = N
             "recovery_basis": "watch" if watch_hours is not None else "assumed",
             "aerobic_te": hard["aerobic_te"],
             "anaerobic_te": hard["anaerobic_te"],
+            "body_battery_impact": hard["body_battery_impact"],
+            "te_label": hard["te_label"],
+            "aerobic_te_message": hard["aerobic_te_message"],
+            "anaerobic_te_message": hard["anaerobic_te_message"],
         }
 
     return {

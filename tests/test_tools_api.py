@@ -242,3 +242,34 @@ def test_a_hard_session_without_recovery_time_is_not_counted_as_recovered(
 def test_the_watchs_recovery_time_is_used_when_present(client):
     hard = client.get("/tools/get_readiness_inputs", params={"date": AS_OF}).json()["last_hard_session"]
     assert hard["recovery_basis"] == "watch"
+
+
+def test_activity_labels_and_body_battery_reach_the_agent(db_file, tmp_path, monkeypatch):
+    import shutil
+
+    from fastapi.testclient import TestClient
+
+    from db import connect
+    from tools.server import app
+
+    copy = tmp_path / "labels.duckdb"
+    shutil.copy(db_file, copy)
+    with connect(copy) as writer:
+        writer.execute(
+            "INSERT INTO activities (activity_id, start_time, type, duration_min, avg_hr, "
+            "hard_minutes, body_battery_impact, te_label, aerobic_te_message, anaerobic_te_message) "
+            "VALUES (998, ?, 'running', 60, 150, 31.9, -19, 'VO2MAX', 'IMPROVING_VO2_MAX', "
+            "'MINOR_ANAEROBIC_BENEFIT')",
+            [f"{AS_OF} 09:00:00"],
+        )
+    monkeypatch.setenv("WEARABLE_DB", str(copy))
+    with TestClient(app) as client:
+        rows = client.get("/tools/list_activities",
+                          params={"start_date": AS_OF, "end_date": AS_OF}).json()["rows"]
+        hard = client.get("/tools/get_readiness_inputs",
+                          params={"date": AS_OF}).json()["last_hard_session"]
+    run = next(r for r in rows if r["activity_id"] == 998)
+    assert run["body_battery_impact"] == -19 and run["te_label"] == "VO2MAX"
+    assert run["aerobic_te_message"] == "IMPROVING_VO2_MAX"
+    assert hard["activity_id"] == 998 and hard["body_battery_impact"] == -19
+    assert hard["anaerobic_te_message"] == "MINOR_ANAEROBIC_BENEFIT"

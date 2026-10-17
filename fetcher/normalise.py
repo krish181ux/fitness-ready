@@ -116,6 +116,9 @@ ACTIVITY_RENAMES = {
 ACTIVITY_KEYS = (
     "activityId", "startTimeLocal", "averageHR", "maxHR",
     "aerobicTrainingEffect", "anaerobicTrainingEffect",
+    # What the vivoactive 5 sends instead of numeric training effect (17 Oct 2026).
+    "differenceBodyBattery", "trainingEffectLabel",
+    "aerobicTrainingEffectMessage", "anaerobicTrainingEffectMessage",
 )
 
 

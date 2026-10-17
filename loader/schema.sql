@@ -40,12 +40,21 @@ CREATE TABLE IF NOT EXISTS activities (
   recovery_time_hours INT,
   avg_speed_kmh DOUBLE, elevation_gain_m DOUBLE,
   hard_minutes DOUBLE,                       -- minutes at or above HR zone 4 (SPEC §6.3)
+  body_battery_impact INT,                   -- Body Battery the session cost, e.g. -19
+  te_label VARCHAR,                          -- primary benefit, e.g. VO2MAX
+  aerobic_te_message VARCHAR,                -- e.g. IMPROVING_VO2_MAX (message id dropped)
+  anaerobic_te_message VARCHAR,              -- e.g. MINOR_ANAEROBIC_BENEFIT
   source VARCHAR DEFAULT 'garmin', loaded_at TIMESTAMP
 );
 
 -- Added after the real export showed it carries no numeric training effect.
 -- Idempotent, so existing databases pick the column up on the next load.
 ALTER TABLE activities ADD COLUMN IF NOT EXISTS hard_minutes DOUBLE;
+-- The labels the watch sends in place of numeric training effect (17 Oct 2026).
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS body_battery_impact INT;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS te_label VARCHAR;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS aerobic_te_message VARCHAR;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS anaerobic_te_message VARCHAR;
 
 CREATE TABLE IF NOT EXISTS user_metrics (
   date DATE, metric VARCHAR, value DOUBLE,   -- metric IN ('vo2max', 'fitness_age')

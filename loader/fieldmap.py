@@ -8,6 +8,7 @@ reported as an unmapped field rather than silently dropped.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timezone
 from typing import Any, Callable
 
@@ -40,6 +41,19 @@ def as_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def te_message(value: Any) -> str | None:
+    """`IMPROVING_VO2_MAX_15` -> `IMPROVING_VO2_MAX`.
+
+    The trailing number is a message id, not a training-effect value (SPEC
+    implementation note, 17 Oct 2026), so it is dropped rather than stored
+    where it could be read as one.
+    """
+    text = as_str(value)
+    if text is None:
+        return None
+    return re.sub(r"_\d+$", "", text) or None
 
 
 def sec_to_min(value: Any) -> float | None:
@@ -258,6 +272,12 @@ ACTIVITIES: Spec = {
     # carries no numeric training effect, so this is what backs the hard-session
     # rule in SPEC §6.3 -- see loader.load_garmin._derive_activities.
     "hard_minutes": (("hardMinutes", as_float),),
+    # The vivoactive 5 sends no numeric training effect or recovery time, only
+    # these labels, and the Body Battery a session cost (17 Oct 2026).
+    "body_battery_impact": (("differenceBodyBattery", as_int),),
+    "te_label": (("trainingEffectLabel", as_str),),
+    "aerobic_te_message": (("aerobicTrainingEffectMessage", te_message),),
+    "anaerobic_te_message": (("anaerobicTrainingEffectMessage", te_message),),
 }
 
 SPECS: dict[str, Spec] = {

@@ -233,3 +233,32 @@ def test_a_zero_length_sleep_record_is_kept():
         "sleepWindowConfirmationType": "OFF_WRIST",
     })
     assert rows and rows[0]["total_min"] == 0
+
+
+# --- training-effect labels and Body Battery impact (17 Oct 2026) -------------
+
+def test_te_message_drops_the_message_id_suffix():
+    from loader.fieldmap import te_message
+    assert te_message("IMPROVING_VO2_MAX_15") == "IMPROVING_VO2_MAX"
+    assert te_message("NO_ANAEROBIC_BENEFIT_0") == "NO_ANAEROBIC_BENEFIT"
+    assert te_message("RECOVERY") == "RECOVERY"
+    assert te_message(None) is None and te_message("  ") is None
+
+
+def test_activity_labels_and_body_battery_are_mapped():
+    """The shape the Connect API and the export both send for a vivoactive 5 run."""
+    from loader.fieldmap import ACTIVITIES, apply_spec
+    raw = {
+        "activityId": 24751424445, "startTimeLocal": "2026-10-17 08:44:37",
+        "activityType": {"typeKey": "running"}, "differenceBodyBattery": -19,
+        "trainingEffectLabel": "VO2MAX",
+        "aerobicTrainingEffectMessage": "IMPROVING_VO2_MAX_15",
+        "anaerobicTrainingEffectMessage": "MINOR_ANAEROBIC_BENEFIT_15",
+    }
+    row, unmapped = apply_spec(raw, ACTIVITIES)
+    assert not {"differenceBodyBattery", "trainingEffectLabel"} & unmapped
+    assert row["body_battery_impact"] == -19
+    assert row["te_label"] == "VO2MAX"
+    assert row["aerobic_te_message"] == "IMPROVING_VO2_MAX"
+    assert row["anaerobic_te_message"] == "MINOR_ANAEROBIC_BENEFIT"
+    assert row.get("aerobic_te") is None

@@ -28,6 +28,12 @@ not a measurement of tomorrow morning.
 Date ranges are capped at 366 days, counting both endpoints, so a full year
 ending on the most recent day fits exactly. Every tool returns `data_gaps`; read it.
 
+This watch sends no numeric training effect or recovery time. When `aerobic_te`
+is null, describe the session from `te_label`, `aerobic_te_message` and
+`body_battery_impact` ("VO2 max focus, improving; cost 19 Body Battery") rather
+than saying no data came through. They are labels, not scores: never turn one
+into a number.
+
 ## Rules
 
 1. **Ground every claim in a tool result.** Cite the numbers you used and the
