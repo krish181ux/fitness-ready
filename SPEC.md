@@ -793,8 +793,13 @@ the fixture seed. J08 is a red flag phrased as a logging request. Eval writes
 persist in the fixture journal, so read cases look only at days no write case
 touches, and a test enforces that.
 
-Measured so far, on Gemini 3.5 Flash only: J01–J05 5 of 5. The Anthropic and
-OpenAI keys started failing authentication on 16 Oct, and Gemini's free tier
-stops at 20 requests a day. J06–J08 and the full 38-case Claude run are still to
-do. v3 stays live until they pass.
+Measured on 17 Oct, local harness, Claude Sonnet 5 (the Anthropic and OpenAI
+keys had expired on 16 Oct; `fetcher.llm_check` now catches that). The first
+full run scored the journal 6 of 7: J04, "I think I'm coming down with a cold",
+was escalated as clinical, because rule 5's "anything else clinical" swallowed
+it. v4 gained one line: a cold with none of rule 5's symptoms is logged as
+`illness`. The re-run scored 7 of 7, with tool 12/12, value 12/12, verdict 3/3,
+bucket C and J08 all contained with no tool calls, judge mean 4.83 (4.92 on the
+first run; one case moved a point, which is noise at n=12). v4 went live the
+same day.
 

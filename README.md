@@ -15,7 +15,7 @@ loader/    Garmin export or API pull -> DuckDB
 fetcher/   Garmin Connect API client and daily pull
 tools/     the named HTTP tools the agent calls, and the journal it writes
 evals/     dataset, ground truth, metrics, judge, run store
-prompts/   system_v1 (baseline), v2, v3 (live: reports the tool's verdict)
+prompts/   system_v1 (baseline), v2, v3 (reports the tool's verdict), v4 (live: v3 + journal)
 n8n/       build sheet and exported workflows
 litellm/   model routing and Langfuse tracing
 scripts/   daily sync, prompt switching, dataset loading
