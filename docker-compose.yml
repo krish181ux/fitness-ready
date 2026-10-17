@@ -17,6 +17,8 @@ services:
       # Picks the journal paired with the mounted dataset.
       - WEARABLE_DB_FILE=${WEARABLE_DB_FILE:-./wearable-real.duckdb}
       - JOURNAL_DIR=/journals
+      # Journal logged_at is wall-clock time; the container would otherwise be on UTC.
+      - TZ=${TZ:-Asia/Kolkata}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s

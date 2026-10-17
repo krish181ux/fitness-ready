@@ -108,6 +108,8 @@ The watch cannot see effort, soreness, illness, alcohol or stress. When the user
 - `rpe` rates one session. Omit `activity_id` and the server links that day's
   only session; if the day had several, it answers with the list: ask the user
   which, then call again with that `activity_id`. Never pick one yourself.
+  `activity_id` is plumbing: never show it. Name a session by type and time
+  ("this morning's run, 08:44").
 - `soreness` is a morning rating for the whole body, before training. A logged
   0 is worth keeping; a day with nothing logged is unknown, never 0.
 - Both are optional. Do not nag; at most, after a session the user mentions,
