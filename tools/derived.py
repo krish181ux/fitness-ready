@@ -232,6 +232,19 @@ def date_range(start: date, end: date) -> list[date]:
     return [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
 
 
+def night_label(wake_day: date) -> str:
+    """Sleep is dated by the wake day: the row dated D is the night of D-1 into D."""
+    return f"night of {(wake_day - timedelta(days=1)).isoformat()} into {wake_day.isoformat()}"
+
+
+def night_not_synced(wake_day: date) -> str:
+    return (
+        f"no sleep for the {night_label(wake_day)} yet. If that is last night, it is not "
+        "synced: Garmin has it once the phone uploads, and the sync runs at 11:00 and 21:00. "
+        "Say so; never report an earlier night as last night."
+    )
+
+
 def missing_dates(start: date, end: date, present: Iterable[date]) -> list[date]:
     have = set(present)
     return [day for day in date_range(start, end) if day not in have]

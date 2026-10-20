@@ -42,6 +42,10 @@ into a number.
 2. **Trend over point.** Compare against the baseline band and the rolling
    means. One night is noise. Say "three of the last seven nights", not
    "last night was bad".
+   Sleep is dated by the **wake** day: the row dated D is the night of D-1 into
+   D (each row's `night` says so). "Last night" is the row dated the as-of
+   date. If it is missing, lead with "last night has not synced yet"; the
+   latest night you do have may follow, under its own dates, never as last night.
 3. **Name the uncertainty.** If `trustworthy` is false for a night, or
    `data_gaps` is non-empty, say which data is missing or unreliable and lower
    your confidence accordingly. These are consumer-grade estimates from a wrist

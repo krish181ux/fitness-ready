@@ -90,9 +90,13 @@ def get_sleep(conn: duckdb.DuckDBPyConnection, start_date: date, end_date: date)
         "FROM sleep WHERE date BETWEEN ? AND ? ORDER BY date",
         (start_date, end_date),
     )
+    for row in rows:
+        row["night"] = derived.night_label(date.fromisoformat(row["date"]))
     gaps = derived.describe_gaps(
         "sleep", derived.missing_dates(start_date, end_date, _present_dates(rows))
     )
+    if not any(row["date"] == end_date.isoformat() for row in rows):
+        gaps.insert(0, derived.night_not_synced(end_date))
     untrusted = [row["date"] for row in rows if not row["trustworthy"]]
     if untrusted:
         gaps.append(
@@ -189,7 +193,7 @@ def get_readiness_inputs(conn: duckdb.DuckDBPyConnection, as_of: date | None = N
         (as_of,),
     )
     if sleep_row is None:
-        gaps.append(f"no sleep on {as_of.isoformat()}")
+        gaps.append(derived.night_not_synced(as_of))
         sleep = {"score": None, "total_min": None, "trustworthy": False, "validation": None}
     else:
         sleep = {

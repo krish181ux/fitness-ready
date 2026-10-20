@@ -273,3 +273,31 @@ def test_activity_labels_and_body_battery_reach_the_agent(db_file, tmp_path, mon
     assert run["aerobic_te_message"] == "IMPROVING_VO2_MAX"
     assert hard["activity_id"] == 998 and hard["body_battery_impact"] == -19
     assert hard["anaerobic_te_message"] == "MINOR_ANAEROBIC_BENEFIT"
+
+
+def test_each_sleep_row_names_its_night_by_the_wake_day(client):
+    rows = client.get("/tools/get_sleep", params={"start_date": "2026-09-12", "end_date": AS_OF}).json()["rows"]
+    assert rows[-1]["date"] == "2026-09-13"
+    assert rows[-1]["night"] == "night of 2026-09-12 into 2026-09-13"
+
+
+def test_an_unsynced_last_night_is_the_first_gap_not_a_silent_omission(db_file, tmp_path, monkeypatch):
+    """20 Oct: last night was not synced, and the agent reported the night before as last night."""
+    import shutil
+
+    from fastapi.testclient import TestClient
+
+    from db import connect
+    from tools.server import app
+
+    copy = tmp_path / "unsynced.duckdb"
+    shutil.copy(db_file, copy)
+    with connect(copy) as writer:
+        writer.execute("DELETE FROM sleep WHERE date = ?", [AS_OF])
+    monkeypatch.setenv("WEARABLE_DB", str(copy))
+    with TestClient(app) as client:
+        sleep = client.get("/tools/get_sleep", params={"start_date": "2026-09-11", "end_date": AS_OF}).json()
+        ready = client.get("/tools/get_readiness_inputs", params={"date": AS_OF}).json()
+    assert sleep["data_gaps"][0].startswith("no sleep for the night of 2026-09-12 into 2026-09-13 yet")
+    assert "never report an earlier night as last night" in sleep["data_gaps"][0]
+    assert any("not synced" in gap for gap in ready["data_gaps"])
