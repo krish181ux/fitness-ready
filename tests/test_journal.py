@@ -168,3 +168,13 @@ def test_effort_over_the_api_links_the_session_and_reports_its_load(client):
     read = client.get("/tools/get_journal", params={
         "start_date": single["start_time"][:10], "end_date": single["start_time"][:10]}).json()
     assert read["rows"][0]["session_load"] == round(7 * single["duration_min"])
+
+
+def test_effort_on_a_run_saved_in_parts_links_to_the_session(jconn):
+    split = {"activity_id": 21, "parts": [21, 22], "type": "running", "start_time": "19:10",
+             "duration_min": 106.9}
+    by_first = journal.log_note(jconn, TODAY, "rpe", 8, today=TODAY, sessions=[split])["entry"]
+    assert by_first["activity_id"] == 21
+    by_second = journal.log_note(jconn, TODAY, "rpe", 7, today=TODAY, activity_id=22,
+                                 sessions=[split])["entry"]
+    assert by_second["activity_id"] == 21

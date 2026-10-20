@@ -751,6 +751,22 @@ The fixture leaves the columns null, so no eval answer changed; a v4 run after
 the prompt line scored tool 12/12, value 12/12, verdict 3/3, journal 7/7, all
 red flags contained, judge 5.00.
 
+### A run saved in parts is one session (20 Oct 2026)
+
+Stopping and restarting the watch mid-run saves two activities. On 15 Sep a
+12.4 km run was saved as 3.36 km + 9.01 km, 1.3 minutes apart, so the longest
+run read 9 km and the agent said so. `derived.merge_split_sessions` now joins
+consecutive activities of the same type that start within 10 minutes of the
+previous one ending: summed duration, distance, calories, ascent, hard minutes
+and Body Battery impact; duration-weighted average HR; `parts` lists every
+activity id, and the first is the session's id. `list_activities` returns
+sessions (`count`) beside `recorded_activities`, and says in `data_gaps` when it
+joined any. Readiness judges the last 7 days as sessions, so two easy parts can
+add up to a hard session. Journal effort links to the session, whichever part's
+id is given, and session load uses the merged minutes. End time is start plus
+timer time, so a paused part reads a longer gap: the rule errs toward keeping
+parts apart.
+
 ### Real data only; effort rates a session (17 Oct 2026)
 
 The synthetic `wearable.duckdb`, its journal, `evals/` (datasets, ground truth,

@@ -20,7 +20,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from db import connect, db_path
-from tools import journal, queries
+from tools import derived, journal, queries
 from tools.derived import MAX_RANGE_DAYS
 
 # Retries for a request that lands while the loader is checkpointing the file.
@@ -180,11 +180,16 @@ class JournalEntry(BaseModel):
 
 
 def _sessions_on(conn: duckdb.DuckDBPyConnection, day: date) -> list[dict[str, Any]]:
+    """That day's sessions, a run saved in parts counted once (derived.merge_split_sessions)."""
     cursor = conn.execute(
-        "SELECT activity_id, type, strftime(start_time, '%H:%M') AS start_time, duration_min "
-        "FROM activities WHERE CAST(start_time AS DATE) = ? ORDER BY start_time", [day])
+        "SELECT activity_id, type, strftime(start_time, '%Y-%m-%dT%H:%M:%S') AS start_time, "
+        "duration_min FROM activities WHERE CAST(start_time AS DATE) = ? ORDER BY start_time",
+        [day])
     names = [d[0] for d in cursor.description]
-    return [dict(zip(names, row)) for row in cursor.fetchall()]
+    sessions = derived.merge_split_sessions([dict(zip(names, row)) for row in cursor.fetchall()])
+    return [{"activity_id": s["activity_id"], "parts": s["parts"], "type": s["type"],
+             "start_time": s["start_time"][11:16], "duration_min": s["duration_min"]}
+            for s in sessions]
 
 
 @app.post("/tools/log_note", summary="Record something the watch can't see, in the journal")
@@ -232,12 +237,10 @@ def get_journal(
         result = journal.get_journal(conn, start_date, end_date, kind=kind or None)
     except journal.JournalError as error:
         raise HTTPException(status_code=422, detail=str(error))
-    linked = [r["activity_id"] for r in result["rows"] if r.get("activity_id")]
-    if linked:
-        minutes = dict(wearable.execute(
-            f"SELECT activity_id, duration_min FROM activities WHERE activity_id IN "
-            f"({', '.join('?' * len(linked))})", linked).fetchall())
-        journal.add_session_load(result["rows"], minutes)
+    linked_days = {date.fromisoformat(r["date"]) for r in result["rows"] if r.get("activity_id")}
+    minutes = {s["activity_id"]: s["duration_min"]
+               for day in linked_days for s in _sessions_on(wearable, day)}
+    journal.add_session_load(result["rows"], minutes)
     return result
 
 

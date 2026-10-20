@@ -142,4 +142,7 @@ tools once).
   from raw inputs with a visible rubric (`tools/derived.py`), and the agent
   reports it. The model used to apply the rubric itself and got the colour
   wrong in 9 of 12 stored v2 answers.
+- **A run saved in parts is one run.** Parts of the same type less than 10
+  minutes apart are reported as a single session with its `parts` listed
+  (`tools/derived.merge_split_sessions`).
 - **Not medical advice.** Red-flag inputs are escalated, not answered.

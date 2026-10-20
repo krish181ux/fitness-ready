@@ -129,14 +129,15 @@ def resolve_session(kind: str, activity_id: int | None,
         return None
     if sessions is None:
         return activity_id
-    ids = {int(a["activity_id"]) for a in sessions}
+    # A run saved in parts is one session; any part's id resolves to its first.
+    ids = {int(part): int(a["activity_id"]) for a in sessions for part in a.get("parts", [a["activity_id"]])}
     listing = "; ".join(f"activity_id={a['activity_id']} {a['type']} at {a['start_time']} "
                         f"({a['duration_min']:.0f} min)" for a in sessions)
     if activity_id is not None:
         if int(activity_id) not in ids:
             raise JournalError(f"activity_id {activity_id} is not a session on that date. "
                                f"Sessions that day: {listing or 'none'}.")
-        return int(activity_id)
+        return ids[int(activity_id)]
     if len(sessions) == 1:
         return int(sessions[0]["activity_id"])
     if len(sessions) > 1:

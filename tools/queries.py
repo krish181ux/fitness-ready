@@ -158,13 +158,18 @@ def list_activities(
     if activity_type:
         where.append("lower(type) = lower(?)")
         params.append(activity_type)
-    rows = _rows(
+    recorded = _rows(
         conn,
         f"SELECT {', '.join(ACTIVITY_COLUMNS)}, {HARD_SESSION_SQL} AS hard_session "
         f"FROM activities WHERE {' AND '.join(where)} ORDER BY start_time",
         params,
     )
+    rows = derived.merge_split_sessions(recorded)
     gaps: list[str] = []
+    joined = [row for row in rows if len(row["parts"]) > 1]
+    if joined:
+        gaps.append(f"{len(joined)} session(s) were saved in parts and are reported as one "
+                    f"(parts less than {derived.SESSION_MERGE_GAP_MIN:g} min apart): see `parts`")
     if not rows:
         gaps.append(
             f"no activities recorded between {start_date.isoformat()} and {end_date.isoformat()}"
@@ -175,6 +180,7 @@ def list_activities(
         "end_date": end_date.isoformat(),
         "type": activity_type,
         "count": len(rows),
+        "recorded_activities": len(recorded),
         "hard_session_count": sum(1 for row in rows if row["hard_session"]),
         "rows": rows,
         "data_gaps": gaps,
@@ -259,6 +265,18 @@ def get_readiness_inputs(conn: duckdb.DuckDBPyConnection, as_of: date | None = N
         f"WHERE start_time <= ? AND {HARD_SESSION_SQL} ORDER BY start_time DESC LIMIT 1",
         (reference,),
     )
+    # Two easy-looking parts can add up to a hard session, and a hard second
+    # part belongs to a session that started earlier: judge the recent week as
+    # merged sessions.
+    recent = derived.merge_split_sessions(_rows(
+        conn,
+        f"SELECT {', '.join(ACTIVITY_COLUMNS)}, {HARD_SESSION_SQL} AS hard_session "
+        "FROM activities WHERE start_time > ? AND start_time <= ? ORDER BY start_time",
+        (reference - timedelta(days=7), reference),
+    ))
+    recent_hard = [s for s in recent if s["hard_session"]]
+    if recent_hard:
+        hard = recent_hard[-1]
     if hard is None:
         last_hard = None
         gaps.append("no hard session on record")
@@ -268,6 +286,7 @@ def get_readiness_inputs(conn: duckdb.DuckDBPyConnection, as_of: date | None = N
         recovery = watch_hours if watch_hours is not None else derived.ASSUMED_RECOVERY_HOURS
         last_hard = {
             "activity_id": hard["activity_id"],
+            "parts": hard.get("parts", [hard["activity_id"]]),
             "type": hard["type"],
             "start_time": hard["start_time"],
             "hours_ago": hours_ago,

@@ -199,3 +199,42 @@ def test_assumed_recovery_is_labelled_in_the_verdict():
     assert f"assumed {derived.ASSUMED_RECOVERY_HOURS} h" in recovery["value"]
     watch = _colour(hard={"recovery_remaining_hours": 15, "recovery_basis": "watch"})
     assert "assumed" not in next(c for c in watch["checks"] if c["name"] == "recovery")["value"]
+
+
+# ------------------------------------------------------- runs saved in parts
+
+def _act(aid, start, minutes, km, hr, kind="running", hard_minutes=0.0):
+    return {"activity_id": aid, "start_time": start, "type": kind, "duration_min": minutes,
+            "distance_km": km, "avg_hr": hr, "max_hr": hr + 20, "hard_minutes": hard_minutes,
+            "calories": 100, "hard_session": False}
+
+
+def test_a_run_saved_in_two_parts_is_one_session():
+    """15 Sep 2026: 3.36 km then 9.01 km, about two minutes apart."""
+    first = _act(1, "2026-09-15T19:10:43", 31.9, 3.36, 117)
+    second = _act(2, "2026-09-15T19:43:58", 75.0, 9.01, 164)
+    [run] = derived.merge_split_sessions([first, second])
+    assert run["parts"] == [1, 2] and run["activity_id"] == 1
+    assert run["distance_km"] == 12.37 and run["duration_min"] == 106.9
+    assert run["avg_hr"] == round((117 * 31.9 + 164 * 75.0) / 106.9)
+    assert 1 <= run["gap_min"] <= 2
+
+
+def test_parts_further_apart_or_of_another_type_stay_separate():
+    morning = _act(1, "2026-09-22T07:16:13", 14.6, 1.7, 135)
+    later = _act(2, "2026-09-22T08:30:50", 9.7, 1.0, 122)
+    assert len(derived.merge_split_sessions([morning, later])) == 2
+    walk = _act(3, "2026-09-22T07:31:00", 10, 0.8, 100, kind="walking")
+    assert len(derived.merge_split_sessions([morning, walk])) == 2
+
+
+def test_two_easy_parts_can_add_up_to_a_hard_session():
+    a = _act(1, "2026-10-01T07:00:00", 30, 4, 150, hard_minutes=12)
+    b = _act(2, "2026-10-01T07:32:00", 30, 4, 155, hard_minutes=12)
+    assert not derived.is_hard_session(a) and not derived.is_hard_session(b)
+    assert derived.merge_split_sessions([a, b])[0]["hard_session"] is True
+
+
+def test_a_single_activity_comes_back_unchanged_with_one_part():
+    one = _act(7, "2026-10-20T08:55:02", 62.2, 8.02, 150)
+    assert derived.merge_split_sessions([one]) == [{**one, "parts": [7]}]

@@ -301,3 +301,29 @@ def test_an_unsynced_last_night_is_the_first_gap_not_a_silent_omission(db_file, 
     assert sleep["data_gaps"][0].startswith("no sleep for the night of 2026-09-12 into 2026-09-13 yet")
     assert "never report an earlier night as last night" in sleep["data_gaps"][0]
     assert any("not synced" in gap for gap in ready["data_gaps"])
+
+
+def test_list_activities_reports_a_run_saved_in_parts_once(db_file, tmp_path, monkeypatch):
+    import shutil
+
+    from fastapi.testclient import TestClient
+
+    from db import connect
+    from tools.server import app
+
+    copy = tmp_path / "split.duckdb"
+    shutil.copy(db_file, copy)
+    with connect(copy) as writer:
+        writer.execute("DELETE FROM activities WHERE CAST(start_time AS DATE) = '2026-09-02'")
+        writer.execute(
+            "INSERT INTO activities (activity_id, start_time, type, duration_min, distance_km, avg_hr, "
+            "hard_minutes) VALUES (801, '2026-09-02 19:10:43', 'running', 31.9, 3.36, 117, 0), "
+            "(802, '2026-09-02 19:43:58', 'running', 75.0, 9.01, 164, 0)")
+    monkeypatch.setenv("WEARABLE_DB", str(copy))
+    with TestClient(app) as client:
+        body = client.get("/tools/list_activities", params={
+            "start_date": "2026-09-02", "end_date": "2026-09-02"}).json()
+    assert body["count"] == 1 and body["recorded_activities"] == 2
+    [run] = body["rows"]
+    assert run["parts"] == [801, 802] and run["distance_km"] == 12.37
+    assert any("saved in parts" in gap for gap in body["data_gaps"])

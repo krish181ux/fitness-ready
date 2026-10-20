@@ -118,6 +118,84 @@ def hrv_vs_baseline(
     return "within"
 
 
+# --- split sessions ---------------------------------------------------------
+# Stopping and restarting the watch mid-run saves two activities. On 15 Sep 2026
+# a 12.4 km run was saved as 3.4 km + 9.0 km, two minutes apart, so "longest run"
+# read 9 km. Consecutive activities of the same type that start within this many
+# minutes of the previous one ending are one session.
+SESSION_MERGE_GAP_MIN = 10.0
+
+
+def _end(row: Mapping[str, Any]) -> datetime:
+    # Timer time, so a paused part ends early and the gap reads long: errs
+    # toward keeping parts apart.
+    return datetime.fromisoformat(row["start_time"]) + timedelta(minutes=row.get("duration_min") or 0)
+
+
+def merge_split_sessions(rows: list[Mapping[str, Any]],
+                         max_gap_min: float = SESSION_MERGE_GAP_MIN) -> list[dict[str, Any]]:
+    """Join activities saved in parts into one session row. `rows` sorted by start_time.
+
+    A merged row keeps the first part's activity_id and start, sums duration,
+    distance, calories, ascent, hard minutes and Body Battery impact, weights
+    average HR by duration, and lists every part in `parts`. Rows that were not
+    split come back unchanged (plus `parts` of one).
+    """
+    groups: list[list[Mapping[str, Any]]] = []
+    for row in rows:
+        last = groups[-1][-1] if groups else None
+        if (last is not None and row["type"] == last["type"]
+                and 0 <= (datetime.fromisoformat(row["start_time"]) - _end(last)).total_seconds() / 60
+                <= max_gap_min):
+            groups[-1].append(row)
+        else:
+            groups.append([row])
+    return [_merge(group) for group in groups]
+
+
+def _merge(parts: list[Mapping[str, Any]]) -> dict[str, Any]:
+    if len(parts) == 1:
+        return {**parts[0], "parts": [parts[0]["activity_id"]]}
+
+    def total(key: str) -> float | None:
+        values = [p.get(key) for p in parts if p.get(key) is not None]
+        return round(sum(values), 2) if values else None
+
+    def biggest(key: str) -> Any:
+        values = [p.get(key) for p in parts if p.get(key) is not None]
+        return max(values) if values else None
+
+    duration = total("duration_min") or 0
+    weighted = [(p["avg_hr"], p.get("duration_min") or 0) for p in parts if p.get("avg_hr")]
+    longest = max(parts, key=lambda p: p.get("duration_min") or 0)
+    merged = {
+        **{k: longest.get(k) for k in ("te_label", "aerobic_te_message", "anaerobic_te_message")},
+        "activity_id": parts[0]["activity_id"],
+        "start_time": parts[0]["start_time"],
+        "type": parts[0]["type"],
+        "duration_min": duration,
+        "distance_km": total("distance_km"),
+        "avg_hr": round(sum(h * d for h, d in weighted) / sum(d for _, d in weighted))
+                  if weighted and sum(d for _, d in weighted) else None,
+        "max_hr": biggest("max_hr"),
+        "calories": total("calories"),
+        "aerobic_te": biggest("aerobic_te"),
+        "anaerobic_te": biggest("anaerobic_te"),
+        "recovery_time_hours": biggest("recovery_time_hours"),
+        "elevation_gain_m": total("elevation_gain_m"),
+        "hard_minutes": total("hard_minutes"),
+        "body_battery_impact": total("body_battery_impact"),
+        "parts": [p["activity_id"] for p in parts],
+        "gap_min": round(sum(
+            (datetime.fromisoformat(b["start_time"]) - _end(a)).total_seconds() / 60
+            for a, b in zip(parts, parts[1:])), 1),
+    }
+    distance = merged["distance_km"]
+    merged["avg_speed_kmh"] = round(distance / duration * 60, 2) if distance and duration else None
+    merged["hard_session"] = is_hard_session(merged) or any(p.get("hard_session") for p in parts)
+    return merged
+
+
 # --- readiness verdict (SPEC §8) -------------------------------------------
 # The Green/Amber/Red rubric used to live only in the prompt, so the same inputs
 # could come back a different colour on a different run. It is computed here
