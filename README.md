@@ -76,8 +76,10 @@ strength sessions, so they count as hard on duration and average HR instead
 
 `scripts/daily_sync.sh` pulls the last 30 days from the Connect API, loads
 `wearable-real.duckdb`. The tools server opens the database per request, so new
-rows reach the agent without a restart. A launchd agent runs it at 11:00 and
-21:00:
+rows reach the agent without a restart. A launchd agent runs it at 09:00, 11:00
+and 21:00. The 09:00 run only loads, so a morning question sees last night; the
+sleep and model-key checks run at 11:00 and 21:00, when the phone has had time
+to upload:
 
 ```bash
 launchctl kickstart gui/$(id -u)/com.fitness-ready.daily-sync   # run it now
