@@ -19,6 +19,8 @@ services:
       - JOURNAL_DIR=/journals
       # Journal logged_at is wall-clock time; the container would otherwise be on UTC.
       - TZ=${TZ:-Asia/Kolkata}
+      # The dashboard's chat box (http://localhost:8000) forwards to the agent here.
+      - N8N_CHAT_URL=http://n8n:5678/webhook/58bfab99-ed26-4afa-8390-ed2a62c516a0/chat
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s
