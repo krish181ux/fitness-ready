@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#06080b">
+  <title>Ready</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='12' fill='none' stroke='%233ee08f' stroke-width='5' stroke-dasharray='56 19' stroke-linecap='round' transform='rotate(-90 16 16)'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+
+  <div class="shell">
+    <main class="board" id="board">
+      <header class="topbar">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12" pathLength="100" /></svg>
+          <span>Ready</span>
+        </div>
+        <div class="sync" id="sync" aria-live="polite"></div>
+      </header>
+
+      <nav class="week" id="week" aria-label="Choose a day"></nav>
+
+      <section class="hero card" id="hero" aria-live="polite"></section>
+      <section class="checks" id="checks" aria-label="Readiness checks"></section>
+
+      <div class="grid">
+        <article class="card" id="sleepCard"></article>
+        <article class="card" id="hrvCard"></article>
+        <article class="card" id="rhrCard"></article>
+        <article class="card" id="dayCard"></article>
+      </div>
+
+      <article class="card" id="sessionsCard"></article>
+
+      <div class="grid">
+        <article class="card" id="journalCard"></article>
+        <article class="card" id="gapsCard"></article>
+      </div>
+
+      <footer class="footnote">
+        Readiness is a visible rubric, not a model: sleep trustworthy and ≥ 70, HRV inside its baseline band,
+        resting HR no more than 3 bpm over its 30-day mean, no recovery time left. One failed check is Amber,
+        two is Red. Not medical advice.
+      </footer>
+    </main>
+
+    <aside class="coach" id="coach" aria-label="Coach">
+      <header class="coach-head">
+        <div class="coach-id">
+          <span class="orb" aria-hidden="true"></span>
+          <div>
+            <b>Coach</b>
+            <small>Answers from your Garmin data</small>
+          </div>
+        </div>
+        <div class="coach-actions">
+          <button class="icon-btn" id="newChat" type="button" title="New conversation" aria-label="New conversation"></button>
+          <button class="icon-btn coach-close" id="coachClose" type="button" title="Close" aria-label="Close coach"></button>
+        </div>
+      </header>
+      <div class="thread" id="thread" aria-live="polite"></div>
+      <form class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="Ask about training, sleep, recovery…" aria-label="Message the coach" maxlength="4000"></textarea>
+        <button class="send" id="send" type="submit" aria-label="Send" disabled></button>
+      </form>
+      <p class="fineprint">Not medical advice. Wrist numbers are approximate.</p>
+    </aside>
+  </div>
+
+  <button class="coach-fab" id="coachOpen" type="button" aria-label="Open coach">
+    <span class="orb" aria-hidden="true"></span><span>Ask Coach</span>
+  </button>
+
+  <div class="tip" id="tip" role="tooltip"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

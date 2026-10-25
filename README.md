@@ -14,6 +14,7 @@ the source of truth; this file is how to run it.
 loader/    Garmin export or API pull -> DuckDB
 fetcher/   Garmin Connect API client and daily pull
 tools/     the named HTTP tools the agent calls, and the journal it writes
+web/       the dashboard and chat panel, served by the tools server at /
 prompts/   system_v1 (baseline), v2, v3 (reports the tool's verdict), v4 (live: v3 + journal)
 n8n/       build sheet and exported workflows
 litellm/   model routing and Langfuse tracing
@@ -126,6 +127,24 @@ curl -s 'localhost:8000/tools/get_journal?start_date=2026-10-01&end_date=2026-10
 v4` switches its prompt. Save nothing from an n8n tab opened before a script
 changed the workflow: the stale copy overwrites it (this deleted the journal
 tools once).
+
+## The dashboard
+
+<http://localhost:8000> (or `make serve` without Docker) is a dashboard and a
+chat with the agent, side by side. It is static files in `web/`, with no build
+step, and every number on it comes from the same tools the agent calls: the
+readiness verdict and its four checks, sleep stages and the last 14 nights,
+HRV against Garmin's baseline band, resting HR against its 30-day mean, the
+sessions of the last two weeks with any logged effort, the journal, and the data
+gaps. It never recomputes the rubric. The week strip moves the whole page to an
+earlier day.
+
+The chat box posts to `/chat` on the tools server, which forwards it to the
+agent's chat trigger in n8n (`N8N_CHAT_URL`). That webhook answers only while
+the trigger has **Make Chat Publicly Available** on and the workflow is
+active. The export has it on, but n8n keeps its own copy, so turn it on in the
+canvas too. The agent has no memory node, so each message is answered on its
+own: put the context in the question.
 
 ## Design decisions worth knowing
 

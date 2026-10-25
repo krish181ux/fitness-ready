@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir "duckdb>=1.0" "fastapi>=0.110" "uvicorn[standard]
 COPY db.py ./
 COPY loader ./loader
 COPY tools ./tools
+COPY web ./web
 
 ENV WEARABLE_DB=/data/wearable.duckdb TOOLS_HOST=0.0.0.0 TOOLS_PORT=8000
 EXPOSE 8000

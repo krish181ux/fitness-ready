@@ -5,27 +5,43 @@
 n8n calls these with HTTP Request tool nodes. There is deliberately no
 free-form SQL endpoint in Phase 1 (SPEC §11 open decision 1): named tools make
 "which tool answered" visible in every trace, and raw data stays behind a guardrail.
+
+The same server hosts the dashboard (web/, at /), which reads these same tools,
+and /chat, which forwards the dashboard's chat box to the n8n agent. The agent
+never calls /chat.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Iterator
 from datetime import date, timedelta
 from typing import Any
 
 import duckdb
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from db import connect, db_path
+from db import REPO_ROOT, connect, db_path
 from tools import derived, journal, queries
 from tools.derived import MAX_RANGE_DAYS
 
 # Retries for a request that lands while the loader is checkpointing the file.
 OPEN_ATTEMPTS = 3
 OPEN_RETRY_DELAY_S = 0.5
+
+WEB_DIR = REPO_ROOT / "web"
+# The chat trigger's production webhook in n8n/workflow_agent.json. It answers
+# only while the trigger is public and the workflow is active.
+N8N_CHAT_URL = os.environ.get(
+    "N8N_CHAT_URL", "http://localhost:5678/webhook/58bfab99-ed26-4afa-8390-ed2a62c516a0/chat")
+# Above the LiteLLM node's own 180 s timeout, so n8n's answer arrives first.
+CHAT_TIMEOUT_S = 200
 
 
 def get_conn() -> Iterator[duckdb.DuckDBPyConnection]:
@@ -242,6 +258,46 @@ def get_journal(
                for day in linked_days for s in _sessions_on(wearable, day)}
     journal.add_session_load(result["rows"], minutes)
     return result
+
+
+# ---------------------------------------------------------------- dashboard
+# Error bodies here are read by a person in the chat panel, not by the agent.
+
+class ChatTurn(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=4000)
+
+
+@app.post("/chat", summary="The dashboard's chat box: one message to the n8n agent, its reply back")
+def chat(turn: ChatTurn) -> dict[str, str]:
+    body = json.dumps({"action": "sendMessage", "sessionId": turn.session_id,
+                       "chatInput": turn.message}).encode()
+    request = urllib.request.Request(N8N_CHAT_URL, data=body,
+                                     headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=CHAT_TIMEOUT_S) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            raise HTTPException(status_code=502, detail=(
+                "n8n has no public chat at this address. On the agent workflow's chat trigger, "
+                "turn on \"Make Chat Publicly Available\", then activate the workflow."))
+        raise HTTPException(status_code=502, detail=f"The agent failed (n8n returned HTTP {error.code}).")
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        raise HTTPException(status_code=502, detail=(
+            "Couldn't reach the agent in n8n. Is the stack up? (docker compose up -d)"))
+    # n8n answers with the last node's item, or a list of them.
+    if isinstance(payload, list):
+        payload = payload[0] if payload else {}
+    reply = payload.get("output") if isinstance(payload, dict) else None
+    if not isinstance(reply, str) or not reply.strip():
+        raise HTTPException(status_code=502, detail="The agent finished without a reply.")
+    return {"reply": reply}
+
+
+# Mounted last: routes declared above take precedence over the static files.
+if WEB_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
 
 def main() -> None:  # pragma: no cover - convenience entrypoint
